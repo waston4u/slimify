@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+// phpcs:disable WordPress.WP.AlternativeFunctions -- real media paths, flock locks, and CLI temp files.
+
 namespace Slimify\Compression\Drivers;
 
 use Slimify\Compression\CompressorInterface;
@@ -10,6 +12,7 @@ use Slimify\Support\Limits;
 use Slimify\Support\PathGuard;
 use Slimify\Support\ProcessRunner;
 use Slimify\Support\Settings;
+
 
 final readonly class MozjpegDriver implements CompressorInterface
 {
@@ -57,7 +60,7 @@ final readonly class MozjpegDriver implements CompressorInterface
             $command = [
                 $binary,
                 '-quality',
-                (string) $quality,
+                (string)$quality,
                 '-optimize',
                 '-progressive',
                 '-outfile',
@@ -66,7 +69,7 @@ final readonly class MozjpegDriver implements CompressorInterface
             ];
 
             $result = $this->runner->run($command, Limits::PROCESS_TIMEOUT_SECONDS);
-            if (! $result['ok'] || ! is_file($temp)) {
+            if (!$result['ok'] || !is_file($temp)) {
                 return false;
             }
 
@@ -76,23 +79,21 @@ final readonly class MozjpegDriver implements CompressorInterface
                 return false;
             }
 
-            $mime = (string) (wp_check_filetype($temp)['type'] ?? '');
-            if ($mime !== '' && ! in_array($mime, ['image/jpeg', 'image/jpg'], true)) {
+            $mime = (string)(wp_check_filetype($temp)['type'] ?? '');
+            if ($mime !== '' && !in_array($mime, ['image/jpeg', 'image/jpg'], true)) {
                 // Verify JPEG SOI if MIME is unclear.
-                $fh = fopen($temp, 'rb');
-                $header = $fh !== false ? (string) fread($fh, 3) : '';
+                $fh = @fopen($temp, 'rb');
+                $header = $fh !== false ? (string)fread($fh, 3) : '';
                 if ($fh !== false) {
                     fclose($fh);
                 }
-                if ($header === '' || ! str_starts_with($header, "\xFF\xD8\xFF")) {
+                if ($header === '' || !str_starts_with($header, "\xFF\xD8\xFF")) {
                     return false;
                 }
             }
 
-            if (! rename($temp, $filePath)) {
-                if (! copy($temp, $filePath)) {
-                    return false;
-                }
+            if (!@rename($temp, $filePath) && !@copy($temp, $filePath)) {
+                return false;
             }
 
             clearstatcache(true, $filePath);
@@ -100,7 +101,7 @@ final readonly class MozjpegDriver implements CompressorInterface
             return is_file($filePath);
         } finally {
             if (is_file($temp)) {
-                @unlink($temp);
+                wp_delete_file($temp);
             }
         }
     }

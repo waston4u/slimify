@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+// phpcs:disable WordPress.WP.AlternativeFunctions -- real media paths, flock locks, and CLI temp files.
+
 namespace Slimify\Support;
 
 /** Queue and compress lock under a private temp directory. */
@@ -28,7 +30,7 @@ final class RuntimePaths
 
         $candidates = Site::runtimeRootCandidates();
 
-        $filtered = (string) apply_filters('slimify_runtime_directory', $candidates[0] ?? '', $blogId);
+        $filtered = (string)apply_filters('slimify_runtime_directory', $candidates[0] ?? '', $blogId);
         if ($filtered !== '' && ($candidates === [] || $filtered !== ($candidates[0] ?? ''))) {
             array_unshift($candidates, $filtered);
         }
@@ -57,7 +59,7 @@ final class RuntimePaths
         }
 
         // Refuse paths under uploads before creating the directory.
-        $uploads = function_exists('wp_upload_dir') ? (string) (wp_upload_dir()['basedir'] ?? '') : '';
+        $uploads = function_exists('wp_upload_dir') ? (string)(wp_upload_dir()['basedir'] ?? '') : '';
         if ($uploads !== '') {
             $normCand = Site::normalizePath($candidate);
             $normUp = Site::normalizePath($uploads);
@@ -66,12 +68,12 @@ final class RuntimePaths
             }
         }
 
-        if (! is_dir($candidate) && ! wp_mkdir_p($candidate)) {
+        if (!is_dir($candidate) && !wp_mkdir_p($candidate)) {
             return null;
         }
 
         $real = realpath($candidate);
-        if ($real === false || ! is_writable($real) || Site::isCriticalDirectory($real)) {
+        if ($real === false || !is_writable($real) || Site::isCriticalDirectory($real)) {
             return null;
         }
 

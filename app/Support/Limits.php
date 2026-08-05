@@ -92,7 +92,7 @@ final class Limits
     /** True if the file is within size and pixel limits. */
     public static function isFileWithinLimits(string $filePath): bool
     {
-        if ($filePath === '' || ! is_file($filePath) || ! is_readable($filePath)) {
+        if ($filePath === '' || !is_file($filePath) || !is_readable($filePath)) {
             return false;
         }
 
@@ -103,13 +103,13 @@ final class Limits
         }
 
         $info = @getimagesize($filePath);
-        if (! is_array($info) || ! isset($info[0], $info[1])) {
+        if (!is_array($info) || !isset($info[0], $info[1])) {
             // Invalid image header.
             return false;
         }
 
-        $w = (int) $info[0];
-        $h = (int) $info[1];
+        $w = (int)$info[0];
+        $h = (int)$info[1];
         if ($w <= 0 || $h <= 0) {
             return false;
         }
@@ -125,17 +125,18 @@ final class Limits
     /** Raise the PHP time limit for a long job. */
     public static function raiseRequestTimeLimit(): void
     {
-        if (! function_exists('set_time_limit')) {
+        if (!function_exists('set_time_limit')) {
             return;
         }
 
+        // phpcs:ignore Squiz.PHP.DiscouragedFunctions.Discouraged -- bulk compression of large originals needs an extended admin request budget.
         @set_time_limit(self::REQUEST_TIME_LIMIT_SECONDS);
     }
 
     /** Apply Imagick resource limits. */
     public static function applyImagickResourceLimits(): void
     {
-        if (! class_exists(\Imagick::class)) {
+        if (!class_exists(\Imagick::class)) {
             return;
         }
 

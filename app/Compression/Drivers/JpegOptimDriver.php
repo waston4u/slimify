@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+// phpcs:disable WordPress.WP.AlternativeFunctions -- atomic temp-to-media file replace after CLI encode.
+
 namespace Slimify\Compression\Drivers;
 
 use Slimify\Compression\CompressorInterface;
@@ -10,6 +12,7 @@ use Slimify\Support\Limits;
 use Slimify\Support\PathGuard;
 use Slimify\Support\ProcessRunner;
 use Slimify\Support\Settings;
+
 
 final readonly class JpegOptimDriver implements CompressorInterface
 {
@@ -53,7 +56,7 @@ final readonly class JpegOptimDriver implements CompressorInterface
         $temp = $dir . DIRECTORY_SEPARATOR . '.slimify-' . bin2hex(random_bytes(8)) . '.jpg';
 
         try {
-            if (! @copy($filePath, $temp)) {
+            if (!@copy($filePath, $temp)) {
                 return false;
             }
 
@@ -68,7 +71,7 @@ final readonly class JpegOptimDriver implements CompressorInterface
             ], Limits::PROCESS_TIMEOUT_SECONDS);
 
             clearstatcache(true, $temp);
-            if (! $result['ok'] || ! is_file($temp)) {
+            if (!$result['ok'] || !is_file($temp)) {
                 return false;
             }
 
@@ -77,7 +80,7 @@ final readonly class JpegOptimDriver implements CompressorInterface
                 return false;
             }
 
-            if (! @rename($temp, $filePath) && ! @copy($temp, $filePath)) {
+            if (!@rename($temp, $filePath) && !@copy($temp, $filePath)) {
                 return false;
             }
 
@@ -86,7 +89,7 @@ final readonly class JpegOptimDriver implements CompressorInterface
             return is_file($filePath);
         } finally {
             if (is_file($temp)) {
-                @unlink($temp);
+                wp_delete_file($temp);
             }
         }
     }

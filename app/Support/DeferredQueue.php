@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+// phpcs:disable WordPress.WP.AlternativeFunctions -- real media paths, flock locks, and CLI temp files.
+
 namespace Slimify\Support;
 
 use Exception;
@@ -34,7 +36,7 @@ final class DeferredQueue
         $ok = false;
 
         $this->mutate(function (array $ids) use ($attachmentId, &$ok): array {
-            $key = (string) $attachmentId;
+            $key = (string)$attachmentId;
             if (isset($ids[$key])) {
                 $ids[$key] = time();
                 $ok = true;
@@ -67,13 +69,13 @@ final class DeferredQueue
         $limit = max(1, min(20, $limit));
         $keys = array_slice(array_keys($this->read()), 0, $limit);
 
-        return array_map(static fn (string|int $key): int => (int) $key, $keys);
+        return array_map(static fn(string|int $key): int => (int)$key, $keys);
     }
 
     /** Queued attachment IDs, oldest first. */
     public function allIds(): array
     {
-        return array_map(static fn (string|int $key): int => (int) $key, array_keys($this->read()));
+        return array_map(static fn(string|int $key): int => (int)$key, array_keys($this->read()));
     }
 
     /** Whether the queue contains an attachment. */
@@ -83,7 +85,7 @@ final class DeferredQueue
             return false;
         }
 
-        return isset($this->read()[(string) $attachmentId]);
+        return isset($this->read()[(string)$attachmentId]);
     }
 
     /** Remove an attachment from the queue. */
@@ -94,7 +96,7 @@ final class DeferredQueue
         }
 
         $this->mutate(static function (array $ids) use ($attachmentId): array {
-            unset($ids[(string) $attachmentId]);
+            unset($ids[(string)$attachmentId]);
 
             return $ids;
         });
@@ -109,7 +111,7 @@ final class DeferredQueue
     /** Schedule a queue drain event. */
     public function scheduleDrain(): void
     {
-        if (! function_exists('wp_next_scheduled') || ! function_exists('wp_schedule_single_event')) {
+        if (!function_exists('wp_next_scheduled') || !function_exists('wp_schedule_single_event')) {
             return;
         }
 
@@ -157,7 +159,7 @@ final class DeferredQueue
         $locked = false;
 
         try {
-            if (! flock($handle, LOCK_EX)) {
+            if (!flock($handle, LOCK_EX)) {
                 fclose($handle);
                 $handle = null;
                 $this->mutateOption($mutator, $successFlag);
@@ -172,7 +174,7 @@ final class DeferredQueue
             $ids = $this->normalise($mutator($ids));
 
             $json = wp_json_encode($ids);
-            if (! is_string($json)) {
+            if (!is_string($json)) {
                 if ($successFlag !== null) {
                     $successFlag = false;
                 }
@@ -188,13 +190,13 @@ final class DeferredQueue
 
                 return;
             }
-            if (! @rename($temp, $file)) {
-                @unlink($temp);
+            if (!@rename($temp, $file) && !@copy($temp, $file)) {
+                wp_delete_file($temp);
                 if ($successFlag !== null) {
                     $successFlag = false;
                 }
             }
-        } catch (RandomException | Exception) {
+        } catch (RandomException|Exception) {
             if ($successFlag !== null) {
                 $successFlag = false;
             }
@@ -215,7 +217,7 @@ final class DeferredQueue
     {
         $lockName = 'slimify_queue_' . Site::id();
         $gotLock = $this->acquireOptionLock($lockName);
-        if (! $gotLock) {
+        if (!$gotLock) {
             if ($successFlag !== null) {
                 $successFlag = false;
             }
@@ -264,7 +266,7 @@ final class DeferredQueue
             // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
             $result = $wpdb->get_var($wpdb->prepare('SELECT GET_LOCK(%s, 2)', $name));
 
-            return (string) $result === '1';
+            return (string)$result === '1';
         }
 
         $path = trailingslashit(sys_get_temp_dir()) . $name . '.lock';
@@ -325,12 +327,12 @@ final class DeferredQueue
 
     private function decodeFile(string $file): array
     {
-        if (! is_file($file)) {
+        if (!is_file($file)) {
             return [];
         }
 
         $raw = @file_get_contents($file);
-        if (! is_string($raw) || $raw === '') {
+        if (!is_string($raw) || $raw === '') {
             return [];
         }
 
@@ -343,9 +345,9 @@ final class DeferredQueue
     {
         $out = [];
         foreach ($data as $key => $value) {
-            $id = (int) $key;
+            $id = (int)$key;
             if ($id > 0) {
-                $out[(string) $id] = is_int($value) ? $value : time();
+                $out[(string)$id] = is_int($value) ? $value : time();
             }
         }
 
@@ -356,4 +358,5 @@ final class DeferredQueue
     {
         return RuntimePaths::directory();
     }
+
 }

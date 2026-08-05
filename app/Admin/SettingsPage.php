@@ -54,6 +54,7 @@ final readonly class SettingsPage
                 'stoppedErrors' => __('Stopped after repeated errors:', 'slimify'),
                 'starting' => __('Starting compression…', 'slimify'),
                 'stopping' => __('Stopping…', 'slimify'),
+                // translators: %d: number of images still needing compression.
                 'pendingCount' => __('%d image(s) still need compression.', 'slimify'),
                 'testingTools' => __('Testing server tools…', 'slimify'),
                 'noResults' => __('No results.', 'slimify'),
@@ -205,14 +206,14 @@ final readonly class SettingsPage
     /** Render the settings page. */
     public function renderPage(): void
     {
-        if (! AjaxAuth::canManage()) {
+        if (!AjaxAuth::canManage()) {
             return;
         }
 
         $opts = $this->settings->all();
         $status = $this->bulkCompression->status();
         $pct = $status['total'] > 0
-            ? (int) round(($status['compressed'] / $status['total']) * 100)
+            ? (int)round(($status['compressed'] / $status['total']) * 100)
             : 100;
         $settingsKey = Settings::OPTION_KEY;
         ?>
@@ -245,19 +246,19 @@ final readonly class SettingsPage
 
                         <div class="slimify-metrics" aria-label="<?php echo esc_attr__('Library progress', 'slimify'); ?>">
                             <div class="slimify-metric">
-                                <span class="slimify-metric__value" id="slimify-total"><?php echo esc_html((string) $status['total']); ?></span>
+                                <span class="slimify-metric__value" id="slimify-total"><?php echo esc_html((string)$status['total']); ?></span>
                                 <span class="slimify-metric__label"><?php echo esc_html__('Eligible', 'slimify'); ?></span>
                             </div>
                             <div class="slimify-metric">
-                                <span class="slimify-metric__value" id="slimify-compressed"><?php echo esc_html((string) $status['compressed']); ?></span>
+                                <span class="slimify-metric__value" id="slimify-compressed"><?php echo esc_html((string)$status['compressed']); ?></span>
                                 <span class="slimify-metric__label"><?php echo esc_html__('Done', 'slimify'); ?></span>
                             </div>
                             <div class="slimify-metric">
-                                <span class="slimify-metric__value" id="slimify-pending"><?php echo esc_html((string) $status['pending']); ?></span>
+                                <span class="slimify-metric__value" id="slimify-pending"><?php echo esc_html((string)$status['pending']); ?></span>
                                 <span class="slimify-metric__label"><?php echo esc_html__('Left', 'slimify'); ?></span>
                             </div>
                             <div class="slimify-metric">
-                                <span class="slimify-metric__value" id="slimify-pct"><?php echo esc_html((string) $pct); ?>%</span>
+                                <span class="slimify-metric__value" id="slimify-pct"><?php echo esc_html((string)$pct); ?>%</span>
                                 <span class="slimify-metric__label"><?php echo esc_html__('Complete', 'slimify'); ?></span>
                             </div>
                         </div>
@@ -265,23 +266,23 @@ final readonly class SettingsPage
                         <div class="slimify-track">
                             <div class="slimify-track__meta">
                                 <span><?php echo esc_html__('Progress', 'slimify'); ?></span>
-                                <span id="slimify-progress-label"><?php echo esc_html((string) $pct); ?>%</span>
+                                <span id="slimify-progress-label"><?php echo esc_html((string)$pct); ?>%</span>
                             </div>
                             <div class="slimify-track__bar" role="progressbar"
                                  aria-valuemin="0"
-                                 aria-valuemax="<?php echo esc_attr((string) max(1, $status['total'])); ?>"
-                                 aria-valuenow="<?php echo esc_attr((string) $status['compressed']); ?>">
+                                 aria-valuemax="<?php echo esc_attr((string)max(1, $status['total'])); ?>"
+                                 aria-valuenow="<?php echo esc_attr((string)$status['compressed']); ?>">
                                 <div
                                     class="slimify-track__fill"
                                     id="slimify-progress-bar"
-                                    style="width: <?php echo esc_attr((string) $pct); ?>%;"
+                                    style="width: <?php echo esc_attr((string)$pct); ?>%;"
                                 ></div>
                             </div>
                             <progress
                                 id="slimify-progress"
                                 class="slimify-track__native"
-                                value="<?php echo esc_attr((string) $status['compressed']); ?>"
-                                max="<?php echo esc_attr((string) max(1, $status['total'])); ?>"
+                                value="<?php echo esc_attr((string)$status['compressed']); ?>"
+                                max="<?php echo esc_attr((string)max(1, $status['total'])); ?>"
                                 hidden
                             ></progress>
                         </div>
@@ -310,7 +311,7 @@ final readonly class SettingsPage
                                 <?php
                                 echo esc_html(
                                     sprintf(
-                                        /* translators: %d: pending image count */
+                                    /* translators: %d: pending image count */
                                         _n(
                                             '%d image still needs compression.',
                                             '%d images still need compression.',
@@ -349,7 +350,10 @@ final readonly class SettingsPage
                                 <label class="slimify-field">
                                     <span class="slimify-field__copy">
                                         <span class="slimify-field__title"><?php echo esc_html__('WebP siblings', 'slimify'); ?></span>
-                                        <span class="slimify-field__desc"><?php echo esc_html__('Create .webp next to each JPEG/PNG file and serve it when the browser accepts WebP. GIF/WebP/AVIF sources are not compressed.', 'slimify'); ?></span>
+                                        <span class="slimify-field__desc"><?php echo esc_html__(
+                                                'Create .webp next to each JPEG/PNG file and serve it when the browser accepts WebP. GIF/WebP/AVIF sources are not compressed.',
+                                                'slimify'
+                                            ); ?></span>
                                     </span>
                                     <input type="checkbox" name="<?php echo esc_attr($settingsKey); ?>[generate_webp]" value="1" <?php checked($opts['generate_webp']); ?> />
                                 </label>
@@ -357,7 +361,10 @@ final readonly class SettingsPage
                                 <label class="slimify-field">
                                     <span class="slimify-field__copy">
                                         <span class="slimify-field__title"><?php echo esc_html__('Keep originals', 'slimify'); ?></span>
-                                        <span class="slimify-field__desc"><?php echo esc_html__('Store one protected backup of the original upload so you can restore (sizes regenerate from it). Recommended in production.', 'slimify'); ?></span>
+                                        <span class="slimify-field__desc"><?php echo esc_html__(
+                                                'Store one protected backup of the original upload so you can restore (sizes regenerate from it). Recommended in production.',
+                                                'slimify'
+                                            ); ?></span>
                                     </span>
                                     <input type="checkbox" name="<?php echo esc_attr($settingsKey); ?>[keep_originals]" value="1" <?php checked($opts['keep_originals']); ?> />
                                 </label>
@@ -377,9 +384,9 @@ final readonly class SettingsPage
                                                 name="<?php echo esc_attr($settingsKey); ?>[jpeg_quality]"
                                                 min="60"
                                                 max="95"
-                                                value="<?php echo esc_attr((string) $opts['jpeg_quality']); ?>"
+                                                value="<?php echo esc_attr((string)$opts['jpeg_quality']); ?>"
                                             />
-                                            <output class="slimify-range__value" id="slimify_jpeg_quality_val" for="slimify_jpeg_quality"><?php echo esc_html((string) $opts['jpeg_quality']); ?></output>
+                                            <output class="slimify-range__value" id="slimify_jpeg_quality_val" for="slimify_jpeg_quality"><?php echo esc_html((string)$opts['jpeg_quality']); ?></output>
                                         </div>
                                         <div class="slimify-range__ends">
                                             <span><?php echo esc_html__('Smaller', 'slimify'); ?></span>

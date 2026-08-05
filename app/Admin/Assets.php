@@ -33,7 +33,7 @@ final class Assets
     {
         $path = self::path($relative);
 
-        return is_readable($path) ? (string) filemtime($path) : SLIMIFY_VERSION;
+        return is_readable($path) ? (string)filemtime($path) : SLIMIFY_VERSION;
     }
 
     /**
@@ -113,13 +113,14 @@ final class Assets
                 $data,
                 JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES
             );
-            if (! is_string($json)) {
+            if (!is_string($json)) {
                 continue;
             }
 
             printf(
-                '<script type="application/json" id="%s">%s</script>' . "\n",
+                '<script type="application/json" id="%1$s">%2$s</script>' . "\n",
                 esc_attr($elementId),
+                // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- JSON_HEX_* flags make the payload safe inside a JSON script tag.
                 $json
             );
         }

@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+// phpcs:disable WordPress.WP.AlternativeFunctions -- atomic temp-to-media file replace after CLI encode.
+
 namespace Slimify\Compression\Drivers;
 
 use Slimify\Compression\CompressorInterface;
@@ -9,6 +11,7 @@ use Slimify\Support\BinaryProbe;
 use Slimify\Support\Limits;
 use Slimify\Support\PathGuard;
 use Slimify\Support\ProcessRunner;
+
 
 final readonly class PngquantDriver implements CompressorInterface
 {
@@ -51,7 +54,7 @@ final readonly class PngquantDriver implements CompressorInterface
         $temp = $dir . DIRECTORY_SEPARATOR . '.slimify-' . bin2hex(random_bytes(8)) . '.png';
 
         try {
-            if (! copy($filePath, $temp)) {
+            if (!copy($filePath, $temp)) {
                 return false;
             }
 
@@ -70,7 +73,7 @@ final readonly class PngquantDriver implements CompressorInterface
             ], Limits::PROCESS_TIMEOUT_SECONDS);
 
             clearstatcache(true, $temp);
-            if (! is_file($temp)) {
+            if (!is_file($temp)) {
                 return false;
             }
 
@@ -78,7 +81,7 @@ final readonly class PngquantDriver implements CompressorInterface
                 return false;
             }
 
-            if (! $result['ok']) {
+            if (!$result['ok']) {
                 return false;
             }
 
@@ -87,7 +90,7 @@ final readonly class PngquantDriver implements CompressorInterface
                 return false;
             }
 
-            if (! rename($temp, $filePath) && ! copy($temp, $filePath)) {
+            if (!@rename($temp, $filePath) && !@copy($temp, $filePath)) {
                 return false;
             }
 
@@ -96,7 +99,7 @@ final readonly class PngquantDriver implements CompressorInterface
             return is_file($filePath);
         } finally {
             if (is_file($temp)) {
-                @unlink($temp);
+                wp_delete_file($temp);
             }
         }
     }

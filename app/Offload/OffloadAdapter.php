@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+// phpcs:disable WordPress.WP.AlternativeFunctions -- real media paths, flock locks, and CLI temp files.
+
 namespace Slimify\Offload;
 
 use Random\RandomException;
@@ -11,6 +13,7 @@ use Slimify\Support\Limits;
 use Slimify\Support\PathGuard;
 use Slimify\Support\RemoteUrlGuard;
 use Slimify\Webp\WebpService;
+
 
 final readonly class OffloadAdapter
 {
@@ -26,12 +29,12 @@ final readonly class OffloadAdapter
     {
         // Host-supplied path list filter names.
         $hooks = apply_filters('slimify_offload_file_path_hooks', []);
-        if (! is_array($hooks)) {
+        if (!is_array($hooks)) {
             return;
         }
 
         foreach ($hooks as $hook) {
-            if (! is_string($hook) || $hook === '' || ! preg_match('/^[a-zA-Z0-9_\/-]+$/', $hook)) {
+            if (!is_string($hook) || $hook === '' || !preg_match('/^[a-zA-Z0-9_\/-]+$/', $hook)) {
                 continue;
             }
             add_filter($hook, [$this, 'mergeExtraFilePaths'], 10, 3);
@@ -43,12 +46,13 @@ final readonly class OffloadAdapter
      *
      * @param array<int|string, mixed>|mixed $paths
      * @param array<string, mixed>|mixed $meta
+     *
      * @return list<string>|array<int|string, string>
      */
     public function mergeExtraFilePaths(mixed $paths, mixed $attachmentId, mixed $meta = []): array
     {
         $paths = is_array($paths) ? $paths : [];
-        $attachmentId = (int) $attachmentId;
+        $attachmentId = (int)$attachmentId;
         $meta = is_array($meta) ? $meta : [];
 
         $normalised = [];
@@ -75,11 +79,11 @@ final readonly class OffloadAdapter
         }
 
         foreach ($paths as $path) {
-            if (! is_string($path) || $path === '') {
+            if (!is_string($path) || $path === '') {
                 continue;
             }
             $webp = preg_replace('/\.(jpe?g|png)$/i', '.webp', $path);
-            if (is_string($webp) && $webp !== $path && is_file($webp) && ! in_array($webp, $paths, true)) {
+            if (is_string($webp) && $webp !== $path && is_file($webp) && !in_array($webp, $paths, true)) {
                 $paths[] = $webp;
             }
         }
@@ -88,11 +92,11 @@ final readonly class OffloadAdapter
         $dir = $attached !== null ? dirname($attached) : '';
         if ($dir !== '') {
             foreach ($map as $basename) {
-                if (! is_string($basename) || $basename === '' || str_contains($basename, '/') || str_contains($basename, '\\')) {
+                if (!is_string($basename) || $basename === '' || str_contains($basename, '/') || str_contains($basename, '\\')) {
                     continue;
                 }
                 $webp = $dir . DIRECTORY_SEPARATOR . $basename;
-                if (is_file($webp) && ! in_array($webp, $paths, true)) {
+                if (is_file($webp) && !in_array($webp, $paths, true)) {
                     $paths[] = $webp;
                 }
             }
@@ -107,13 +111,13 @@ final readonly class OffloadAdapter
     public function restoreAttachment(int $attachmentId): array
     {
         $result = $this->compressionService->restoreAttachment($attachmentId);
-        if (! $result['ok']) {
+        if (!$result['ok']) {
             return $result;
         }
 
         $needsRemote = $this->usesRemoteStorage($attachmentId);
         $ok = $this->pushToRemote($attachmentId, 'restore', $needsRemote);
-        if ($needsRemote && ! $ok) {
+        if ($needsRemote && !$ok) {
             return [
                 'ok' => false,
                 'message' => __('Originals restored locally, but remote storage could not be updated.', 'slimify'),
@@ -125,12 +129,14 @@ final readonly class OffloadAdapter
             'ok' => true,
             'message' => $needsRemote
                 ? __('Original restored, sizes regenerated, and remote storage notified.', 'slimify')
-                : (string) ($result['message'] ?? __('Original restored and image sizes regenerated.', 'slimify')),
+                : (string)($result['message'] ?? __('Original restored and image sizes regenerated.', 'slimify')),
             'files' => $result['files'],
         ];
     }
 
-    /** Compress on upload (or offload). */
+    /** Compress on upload (or offload).
+     * @throws RandomException
+     */
     public function compressAttachment(int $attachmentId, bool $dryRun = false): array
     {
         $this->compressionService->clearUnavailableIfRepairable($attachmentId);
@@ -149,7 +155,7 @@ final readonly class OffloadAdapter
         }
 
         $metadata = wp_get_attachment_metadata($attachmentId);
-        if (! is_array($metadata)) {
+        if (!is_array($metadata)) {
             $metadata = [];
         }
 
@@ -165,7 +171,7 @@ final readonly class OffloadAdapter
                 ];
             }
 
-            if (! $this->ensureRegisteredLocalCopy($attachmentId)) {
+            if (!$this->ensureRegisteredLocalCopy($attachmentId)) {
                 return [
                     'ok' => false,
                     'message' => __('Unable to materialise a local copy of the attachment.', 'slimify'),
@@ -173,8 +179,8 @@ final readonly class OffloadAdapter
                 ];
             }
         } else {
-            if (! $this->canFetchRemote($attachmentId)) {
-                if (! $dryRun) {
+            if (!$this->canFetchRemote($attachmentId)) {
+                if (!$dryRun) {
                     $this->compressionService->markUnavailable($attachmentId, 'no_remote_source');
                 }
 
@@ -198,7 +204,7 @@ final readonly class OffloadAdapter
             }
 
             // Materialise remote then compress.
-            if (! $this->materializeRemoteAttachment($attachmentId, $metadata)) {
+            if (!$this->materializeRemoteAttachment($attachmentId, $metadata)) {
                 return [
                     'ok' => false,
                     'message' => __('Failed to fetch the remote original (offloader/URL).', 'slimify'),
@@ -236,7 +242,7 @@ final readonly class OffloadAdapter
         }
 
         try {
-            if (! $this->placePrimaryLocally($attachmentId, $staged['path'])) {
+            if (!$this->placePrimaryLocally($attachmentId, $staged['path'])) {
                 return false;
             }
 
@@ -246,11 +252,11 @@ final readonly class OffloadAdapter
                     if ($sizeProcessed >= Limits::OFFLOAD_MAX_SIZES) {
                         break;
                     }
-                    if (! is_array($sizeData) || empty($sizeData['file'])) {
+                    if (!is_array($sizeData) || empty($sizeData['file'])) {
                         continue;
                     }
 
-                    $sizeDest = $this->localSizeDestination($attachmentId, (string) $sizeData['file']);
+                    $sizeDest = $this->localSizeDestination($attachmentId, (string)$sizeData['file']);
                     if ($sizeDest === null) {
                         continue;
                     }
@@ -263,8 +269,8 @@ final readonly class OffloadAdapter
 
                     $stagedSize = $this->fetchAttachmentSource(
                         $attachmentId,
-                        (string) $sizeName,
-                        (string) $sizeData['file']
+                        (string)$sizeName,
+                        (string)$sizeData['file']
                     );
                     if ($stagedSize === null) {
                         continue;
@@ -282,7 +288,7 @@ final readonly class OffloadAdapter
             return $this->hasRealDiskFile($attachmentId);
         } finally {
             foreach ($temps as $temp) {
-                if (! is_string($temp) || $temp === '' || ! is_file($temp)) {
+                if (!is_string($temp) || $temp === '' || !is_file($temp)) {
                     continue;
                 }
                 $attached = $this->registeredAttachedPath($attachmentId);
@@ -291,7 +297,7 @@ final readonly class OffloadAdapter
                 if ($tempReal !== false && $attachedReal !== false && $tempReal === $attachedReal) {
                     continue;
                 }
-                @unlink($temp);
+                wp_delete_file($temp);
             }
         }
     }
@@ -337,7 +343,7 @@ final readonly class OffloadAdapter
             $flagged = $this->compressionService->isFlagged($attachmentId);
             $locked = $this->compressionService->isLocked($attachmentId);
             $stats = get_post_meta($attachmentId, CompressionService::META_STATS, true);
-            $status = is_array($stats) ? (string) ($stats['status'] ?? '') : '';
+            $status = is_array($stats) ? (string)($stats['status'] ?? '') : '';
 
             if ($flagged && $status === 'unavailable') {
                 return [
@@ -391,7 +397,7 @@ final readonly class OffloadAdapter
         }
 
         $ok = $this->pushToRemote($attachmentId, $pushReason, $needsRemote);
-        if (! $ok && $needsRemote) {
+        if (!$ok && $needsRemote) {
             $this->recordRemotePushFailed($attachmentId);
 
             return [
@@ -435,6 +441,7 @@ final readonly class OffloadAdapter
 
         /**
          * Local path from a host fetch hook
+         *
          * @param string|null $path
          * @param int $attachmentId
          * @param array{size: string, size_file: ?string, url: ?string, attached: ?string} $context
@@ -467,6 +474,7 @@ final readonly class OffloadAdapter
         $url = $hintUrl;
         /**
          * Signed or provider URL when the public URL is not usable
+         *
          * @param string|null $url
          * @param int $attachmentId
          * @param array{size: string, size_file: ?string, url: ?string, attached: ?string} $context
@@ -476,7 +484,7 @@ final readonly class OffloadAdapter
             $url = $filteredUrl;
         }
 
-        if (! is_string($url) || $url === '') {
+        if (!is_string($url) || $url === '') {
             return null;
         }
 
@@ -503,6 +511,7 @@ final readonly class OffloadAdapter
 
         /**
          * true/false forces a result; null means not handled here
+         *
          * @param bool|null $result
          * @param int $attachmentId
          * @param array<string, mixed> $context
@@ -517,7 +526,7 @@ final readonly class OffloadAdapter
             $handlerAccepted = false;
             $handlerRejected = false;
             foreach ($handlers as $handler) {
-                if (! is_callable($handler)) {
+                if (!is_callable($handler)) {
                     continue;
                 }
                 try {
@@ -529,7 +538,7 @@ final readonly class OffloadAdapter
                     if ($handlerResult === false) {
                         $handlerRejected = true;
                     }
-                } catch ( Throwable) {
+                } catch (Throwable) {
                     // Ignore handler errors.
                 }
             }
@@ -544,18 +553,18 @@ final readonly class OffloadAdapter
             return $filtered;
         }
 
-        if (! $needsRemoteWrite) {
+        if (!$needsRemoteWrite) {
             return $local !== '' && is_file($local);
         }
 
-        $requireConfirm = (bool) apply_filters(
+        $requireConfirm = (bool)apply_filters(
             'slimify_require_remote_push_confirmation',
             true,
             $attachmentId,
             $context
         );
 
-        if (! $requireConfirm) {
+        if (!$requireConfirm) {
             return $local !== '' && is_file($local);
         }
 
@@ -602,7 +611,7 @@ final readonly class OffloadAdapter
             return $forced;
         }
 
-        if (! $this->hasRealDiskFile($attachmentId) && $this->canFetchRemote($attachmentId)) {
+        if (!$this->hasRealDiskFile($attachmentId) && $this->canFetchRemote($attachmentId)) {
             return true;
         }
 
@@ -650,11 +659,11 @@ final readonly class OffloadAdapter
         }
 
         $source = get_attached_file($attachmentId, false);
-        if (! is_string($source) || $source === '' || $source === $registered) {
+        if (!is_string($source) || $source === '' || $source === $registered) {
             $source = $registered;
         }
 
-        if (! $this->isReadableSource($source)) {
+        if (!$this->isReadableSource($source)) {
             $fetched = $this->fetchAttachmentSource($attachmentId, 'full', null);
             if ($fetched === null) {
                 return false;
@@ -666,7 +675,7 @@ final readonly class OffloadAdapter
                 && is_file($fetched['path'])
                 && realpath($fetched['path']) !== realpath($registered)
             ) {
-                @unlink($fetched['path']);
+                wp_delete_file($fetched['path']);
             }
 
             return $ok;
@@ -679,7 +688,7 @@ final readonly class OffloadAdapter
     private function registeredAttachedPath(int $attachmentId): ?string
     {
         $path = get_attached_file($attachmentId, true);
-        if (! is_string($path) || $path === '') {
+        if (!is_string($path) || $path === '') {
             return null;
         }
 
@@ -690,16 +699,16 @@ final readonly class OffloadAdapter
     private function sourceUrl(int $attachmentId, string $sizeKey): ?string
     {
         $url = WebpService::withoutRewriting(
-            static fn () => $sizeKey === 'full'
+            static fn() => $sizeKey === 'full'
                 ? wp_get_attachment_url($attachmentId)
                 : wp_get_attachment_image_url($attachmentId, $sizeKey)
         );
 
-        if (! is_string($url) || $url === '') {
+        if (!is_string($url) || $url === '') {
             return null;
         }
 
-        if (! str_starts_with($url, 'http://') && ! str_starts_with($url, 'https://')) {
+        if (!str_starts_with($url, 'http://') && !str_starts_with($url, 'https://')) {
             return null;
         }
 
@@ -715,9 +724,9 @@ final readonly class OffloadAdapter
         }
 
         $uploads = wp_upload_dir();
-        $baseurl = (string) ($uploads['baseurl'] ?? '');
+        $baseurl = (string)($uploads['baseurl'] ?? '');
 
-        return $baseurl === '' || ! str_starts_with($url, $baseurl);
+        return $baseurl === '' || !str_starts_with($url, $baseurl);
     }
 
     /** True if the source is readable. */
@@ -740,7 +749,7 @@ final readonly class OffloadAdapter
      */
     private function copyIntoJailTemp(string $source, string $basename): ?array
     {
-        if (! $this->isReadableSource($source)) {
+        if (!$this->isReadableSource($source)) {
             return null;
         }
 
@@ -752,14 +761,14 @@ final readonly class OffloadAdapter
         // Local files stay inside the jail.
         if (is_file($source)) {
             $real = realpath($source);
-            if ($real === false || ! $this->pathGuard->isAllowed($real)) {
+            if ($real === false || !$this->pathGuard->isAllowed($real)) {
                 return null;
             }
 
             $temp = dirname($real) . DIRECTORY_SEPARATOR . '.slimify-src-' . bin2hex(random_bytes(8)) . '-' . $basename;
             if (@copy($real, $temp) && is_file($temp)) {
-                if (! Limits::isFileWithinLimits($temp)) {
-                    @unlink($temp);
+                if (!Limits::isFileWithinLimits($temp)) {
+                    wp_delete_file($temp);
 
                     return null;
                 }
@@ -767,7 +776,7 @@ final readonly class OffloadAdapter
                 return ['path' => $temp, 'owned' => true];
             }
 
-            if (! Limits::isFileWithinLimits($real)) {
+            if (!Limits::isFileWithinLimits($real)) {
                 return null;
             }
 
@@ -775,12 +784,12 @@ final readonly class OffloadAdapter
         }
 
         $temp = trailingslashit(sys_get_temp_dir()) . 'slimify-' . bin2hex(random_bytes(8)) . '-' . $basename;
-        if (! $this->placeFileFromSource($source, $temp)) {
+        if (!$this->placeFileFromSource($source, $temp)) {
             return null;
         }
 
-        if (! $this->pathGuard->isAllowed($temp) || ! Limits::isFileWithinLimits($temp)) {
-            @unlink($temp);
+        if (!$this->pathGuard->isAllowed($temp) || !Limits::isFileWithinLimits($temp)) {
+            wp_delete_file($temp);
 
             return null;
         }
@@ -801,20 +810,20 @@ final readonly class OffloadAdapter
         clearstatcache(true, $tmp);
         $size = filesize($tmp);
         if ($size === false || $size === 0 || $size > Limits::MAX_FILE_BYTES) {
-            @unlink($tmp);
+            wp_delete_file($tmp);
 
             return null;
         }
 
-        if (! Limits::isFileWithinLimits($tmp)) {
-            @unlink($tmp);
+        if (!Limits::isFileWithinLimits($tmp)) {
+            wp_delete_file($tmp);
 
             return null;
         }
 
         $real = realpath($tmp);
         if ($real === false) {
-            @unlink($tmp);
+            wp_delete_file($tmp);
 
             return null;
         }
@@ -824,16 +833,16 @@ final readonly class OffloadAdapter
         }
 
         $copy = trailingslashit(sys_get_temp_dir()) . 'slimify-' . bin2hex(random_bytes(8)) . '-' . basename($real);
-        if (! @copy($real, $copy)) {
-            @unlink($real);
+        if (!@copy($real, $copy)) {
+            wp_delete_file($real);
 
             return null;
         }
-        @unlink($real);
+        wp_delete_file($real);
         $jailed = realpath($copy) ?: $copy;
 
-        if (! $this->pathGuard->isAllowed($jailed)) {
-            @unlink($jailed);
+        if (!$this->pathGuard->isAllowed($jailed)) {
+            wp_delete_file($jailed);
 
             return null;
         }
@@ -845,7 +854,7 @@ final readonly class OffloadAdapter
     /** Stream a remote URL to a temp file. */
     private function fetchRemoteToTemp(string $url): ?string
     {
-        if (! function_exists('wp_tempnam')) {
+        if (!function_exists('wp_tempnam')) {
             require_once ABSPATH . 'wp-admin/includes/file.php';
         }
 
@@ -853,12 +862,12 @@ final readonly class OffloadAdapter
         $maxHops = 5;
 
         for ($hop = 0; $hop <= $maxHops; ++$hop) {
-            if (! RemoteUrlGuard::isSafe($current)) {
+            if (!RemoteUrlGuard::isSafe($current)) {
                 return null;
             }
 
             $tmp = wp_tempnam($current);
-            if (! is_string($tmp) || $tmp === '') {
+            if (!is_string($tmp) || $tmp === '') {
                 return null;
             }
 
@@ -871,16 +880,16 @@ final readonly class OffloadAdapter
             ]);
 
             if (is_wp_error($response)) {
-                @unlink($tmp);
+                wp_delete_file($tmp);
 
                 return null;
             }
 
-            $code = (int) wp_remote_retrieve_response_code($response);
+            $code = (int)wp_remote_retrieve_response_code($response);
             if ($code >= 300 && $code < 400) {
-                @unlink($tmp);
+                wp_delete_file($tmp);
                 $location = wp_remote_retrieve_header($response, 'location');
-                if (! is_string($location) || $location === '' || $hop === $maxHops) {
+                if (!is_string($location) || $location === '' || $hop === $maxHops) {
                     return null;
                 }
 
@@ -893,13 +902,13 @@ final readonly class OffloadAdapter
             }
 
             if ($code < 200 || $code >= 300) {
-                @unlink($tmp);
+                wp_delete_file($tmp);
 
                 return null;
             }
 
-            if (! RemoteUrlGuard::stillSafeAfterFetch($current)) {
-                @unlink($tmp);
+            if (!RemoteUrlGuard::stillSafeAfterFetch($current)) {
+                wp_delete_file($tmp);
 
                 return null;
             }
@@ -923,13 +932,13 @@ final readonly class OffloadAdapter
         }
 
         $parts = wp_parse_url($current);
-        if (! is_array($parts) || empty($parts['scheme']) || empty($parts['host'])) {
+        if (!is_array($parts) || empty($parts['scheme']) || empty($parts['host'])) {
             return null;
         }
 
-        $scheme = (string) $parts['scheme'];
-        $host = (string) $parts['host'];
-        $port = isset($parts['port']) ? ':' . (int) $parts['port'] : '';
+        $scheme = (string)$parts['scheme'];
+        $host = (string)$parts['host'];
+        $port = isset($parts['port']) ? ':' . (int)$parts['port'] : '';
 
         if (str_starts_with($location, '//')) {
             return $scheme . ':' . $location;
@@ -939,9 +948,9 @@ final readonly class OffloadAdapter
             return $scheme . '://' . $host . $port . $location;
         }
 
-        $path = (string) ($parts['path'] ?? '/');
+        $path = (string)($parts['path'] ?? '/');
         $base = preg_replace('#/[^/]*$#', '/', $path);
-        if (! is_string($base) || $base === '') {
+        if (!is_string($base) || $base === '') {
             $base = '/';
         }
 
@@ -952,7 +961,7 @@ final readonly class OffloadAdapter
     private function placeFileFromSource(string $source, string $destination): bool
     {
         $dir = dirname($destination);
-        if (! is_dir($dir) && ! wp_mkdir_p($dir)) {
+        if (!is_dir($dir) && !wp_mkdir_p($dir)) {
             return false;
         }
 
@@ -968,7 +977,7 @@ final readonly class OffloadAdapter
     private function streamCopyBounded(string $source, string $destination): bool
     {
         $dir = dirname($destination);
-        if (! is_dir($dir) && ! wp_mkdir_p($dir)) {
+        if (!is_dir($dir) && !wp_mkdir_p($dir)) {
             return false;
         }
 
@@ -986,7 +995,7 @@ final readonly class OffloadAdapter
 
         $written = 0;
         $ok = true;
-        while (! feof($in)) {
+        while (!feof($in)) {
             $chunk = fread($in, 1024 * 256);
             if ($chunk === false) {
                 $ok = false;
@@ -1009,8 +1018,8 @@ final readonly class OffloadAdapter
         fclose($in);
         fclose($out);
 
-        if (! $ok || $written === 0) {
-            @unlink($destination);
+        if (!$ok || $written === 0) {
+            wp_delete_file($destination);
 
             return false;
         }
@@ -1045,7 +1054,7 @@ final readonly class OffloadAdapter
         }
 
         $dir = dirname($attached);
-        if (! is_dir($dir) && ! wp_mkdir_p($dir)) {
+        if (!is_dir($dir) && !wp_mkdir_p($dir)) {
             return null;
         }
 
@@ -1056,7 +1065,7 @@ final readonly class OffloadAdapter
     private function placeFile(string $source, string $destination): bool
     {
         $dir = dirname($destination);
-        if (! is_dir($dir) && ! wp_mkdir_p($dir)) {
+        if (!is_dir($dir) && !wp_mkdir_p($dir)) {
             return false;
         }
 
@@ -1064,7 +1073,7 @@ final readonly class OffloadAdapter
             return is_file($destination) && filesize($destination) > 0;
         }
 
-        if (! @copy($source, $destination)) {
+        if (!@copy($source, $destination)) {
             return false;
         }
 
@@ -1078,7 +1087,7 @@ final readonly class OffloadAdapter
     {
         $out = [];
         foreach ($paths as $key => $path) {
-            if (! is_string($path) || $path === '') {
+            if (!is_string($path) || $path === '') {
                 continue;
             }
 
@@ -1101,7 +1110,7 @@ final readonly class OffloadAdapter
     private function recordRemotePushFailed(int $attachmentId): void
     {
         $stats = get_post_meta($attachmentId, CompressionService::META_STATS, true);
-        if (! is_array($stats)) {
+        if (!is_array($stats)) {
             $stats = [
                 'version' => 1,
                 'processed_at' => time(),

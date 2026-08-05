@@ -53,11 +53,11 @@ final readonly class BulkCompression
         ";
 
         $args = array_merge([CompressionService::META_FLAG], $mimes);
-        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- placeholders are generated from a fixed list.
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,PluginCheck.Security.DirectDB.UnescapedDBParameter -- placeholders are generated from a fixed mime list; prepared via $wpdb->prepare().
         $row = $wpdb->get_row($wpdb->prepare($sql, ...$args), ARRAY_A);
 
-        $total = isset($row['total']) ? (int) $row['total'] : 0;
-        $compressed = isset($row['compressed']) ? (int) $row['compressed'] : 0;
+        $total = isset($row['total']) ? (int)$row['total'] : 0;
+        $compressed = isset($row['compressed']) ? (int)$row['compressed'] : 0;
 
         $status = [
             'total' => $total,
@@ -94,7 +94,7 @@ final readonly class BulkCompression
 
         $result = $this->offloadAdapter->compressAttachment($attachmentId, false);
 
-        if (! empty($result['busy'])) {
+        if (!empty($result['busy'])) {
             wp_send_json_error([
                 'attachment_id' => $attachmentId,
                 'busy' => true,
@@ -106,7 +106,7 @@ final readonly class BulkCompression
 
         $processed = get_post_meta($attachmentId, CompressionService::META_FLAG, true) === '1';
 
-        if (! empty($result['permanent']) && $processed) {
+        if (!empty($result['permanent']) && $processed) {
             $status = $this->status();
             wp_send_json_success([
                 'done' => $status['pending'] === 0,
@@ -120,7 +120,7 @@ final readonly class BulkCompression
             ]);
         }
 
-        if (! $result['ok']) {
+        if (!$result['ok']) {
             wp_send_json_error([
                 'attachment_id' => $attachmentId,
                 'message' => $result['message'],
@@ -128,7 +128,7 @@ final readonly class BulkCompression
             ], 422);
         }
 
-        if (! $processed) {
+        if (!$processed) {
             wp_send_json_success([
                 'done' => false,
                 'attachment_id' => $attachmentId,
@@ -148,7 +148,7 @@ final readonly class BulkCompression
             'message' => $result['message'] !== ''
                 ? $result['message']
                 : sprintf(
-                    /* translators: %d: attachment ID */
+                /* translators: %d: attachment ID */
                     __('Processed attachment #%d.', 'slimify'),
                     $attachmentId
                 ),
@@ -165,7 +165,7 @@ final readonly class BulkCompression
     {
         global $wpdb;
 
-        $skip = array_values(array_filter($this->queue->allIds(), static fn (int $id): bool => $id > 0));
+        $skip = array_values(array_filter($this->queue->allIds(), static fn(int $id): bool => $id > 0));
         $mimes = Limits::supportedMimes();
         $mimeHolders = implode(', ', array_fill(0, count($mimes), '%s'));
 
@@ -194,9 +194,9 @@ final readonly class BulkCompression
             LIMIT 1
         ";
 
-        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- placeholders are generated from fixed lists.
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,PluginCheck.Security.DirectDB.UnescapedDBParameter -- placeholders are generated from fixed lists; prepared via $wpdb->prepare().
         $id = $wpdb->get_var($wpdb->prepare($sql, ...$args));
 
-        return $id !== null ? (int) $id : null;
+        return $id !== null ? (int)$id : null;
     }
 }

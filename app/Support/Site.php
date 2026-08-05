@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Slimify\Support;
 
+use Exception;
 use Random\RandomException;
 
 /** Paths: originals under uploads; runtime (queue/locks) under temp. */
@@ -31,7 +32,7 @@ final class Site
     /** True on multisite. */
     public static function isMultisite(): bool
     {
-        if (! self::$booted) {
+        if (!self::$booted) {
             self::boot();
         }
 
@@ -41,7 +42,7 @@ final class Site
     /** Current blog ID. */
     public static function id(): int
     {
-        if (! self::isMultisite()) {
+        if (!self::isMultisite()) {
             return 1;
         }
 
@@ -53,8 +54,8 @@ final class Site
     {
         if (function_exists('wp_get_upload_dir')) {
             $uploads = wp_get_upload_dir();
-            if (! empty($uploads['basedir'])) {
-                return rtrim((string) $uploads['basedir'], '/\\');
+            if (!empty($uploads['basedir'])) {
+                return rtrim((string)$uploads['basedir'], '/\\');
             }
         }
 
@@ -125,7 +126,7 @@ final class Site
     /** HMAC secret for backup filenames. */
     public static function storageSecret(): string
     {
-        if (! function_exists('get_option')) {
+        if (!function_exists('get_option')) {
             return '';
         }
 
@@ -138,6 +139,8 @@ final class Site
             $secret = bin2hex(random_bytes(32));
         } catch (RandomException) {
             return '';
+        } catch (Exception) {
+            // Error
         }
 
         update_option(self::OPTION_STORAGE_SECRET, $secret, true);
@@ -228,8 +231,8 @@ final class Site
 
         if (function_exists('wp_upload_dir')) {
             $uploads = wp_upload_dir();
-            if (! empty($uploads['basedir'])) {
-                $candidates[] = (string) $uploads['basedir'];
+            if (!empty($uploads['basedir'])) {
+                $candidates[] = (string)$uploads['basedir'];
             }
         }
 
@@ -257,7 +260,7 @@ final class Site
     {
         $docRoot = self::documentRootFromRequest();
 
-        if (! function_exists('get_option')) {
+        if (!function_exists('get_option')) {
             return $docRoot;
         }
 
@@ -281,7 +284,10 @@ final class Site
             return null;
         }
 
-        $raw = isset($_SERVER['DOCUMENT_ROOT']) ? (string) $_SERVER['DOCUMENT_ROOT'] : '';
+        $raw = '';
+        if (isset($_SERVER['DOCUMENT_ROOT'])) {
+            $raw = sanitize_text_field(wp_unslash((string)$_SERVER['DOCUMENT_ROOT']));
+        }
         if ($raw === '') {
             return null;
         }

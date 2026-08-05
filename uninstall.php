@@ -2,9 +2,11 @@
 
 declare(strict_types=1);
 
+// phpcs:disable WordPress.WP.AlternativeFunctions -- real media paths, flock locks, and CLI temp files.
+
 use Slimify\Support\Site;
 
-if (! defined('WP_UNINSTALL_PLUGIN')) {
+if (!defined('WP_UNINSTALL_PLUGIN')) {
     exit;
 }
 
@@ -14,7 +16,7 @@ if (is_readable($slimifyUninstallAutoload)) {
 } else {
     spl_autoload_register(static function (string $class): void {
         $prefix = 'Slimify\\';
-        if (! str_starts_with($class, $prefix)) {
+        if (!str_starts_with($class, $prefix)) {
             return;
         }
 
@@ -67,11 +69,11 @@ $slimifyUninstallSite = static function (): void {
     );
 
     $targets = array_unique($targets);
-    usort($targets, static fn (string $a, string $b): int => strlen($b) <=> strlen($a));
+    usort($targets, static fn(string $a, string $b): int => strlen($b) <=> strlen($a));
 
     foreach ($targets as $target) {
         $real = realpath($target);
-        if ($real === false || ! is_dir($real)) {
+        if ($real === false || !is_dir($real)) {
             continue;
         }
 
@@ -82,13 +84,13 @@ $slimifyUninstallSite = static function (): void {
         // Allowed: …/slimify, …/slimify/originals, or slimify-runtime-*
         $normalised = str_replace('\\', '/', $real);
         $allowed = preg_match(
-            '#(?:'
-            . '/slimify(?:/originals)?$'
-            . '|/slimify-runtime-[a-f0-9]{16,64}$'
-            . ')#',
-            $normalised
-        ) === 1;
-        if (! $allowed) {
+                '#(?:'
+                . '/slimify(?:/originals)?$'
+                . '|/slimify-runtime-[a-f0-9]{16,64}$'
+                . ')#',
+                $normalised
+            ) === 1;
+        if (!$allowed) {
             continue;
         }
 
@@ -104,7 +106,7 @@ $slimifyUninstallSite = static function (): void {
             if ($item->isDir()) {
                 @rmdir($item->getPathname());
             } else {
-                @unlink($item->getPathname());
+                wp_delete_file($item->getPathname());
             }
         }
 
@@ -113,8 +115,8 @@ $slimifyUninstallSite = static function (): void {
 };
 
 if (is_multisite()) {
-    foreach (get_sites(['fields' => 'ids', 'number' => 0]) as $siteId) {
-        switch_to_blog((int) $siteId);
+    foreach (get_sites(['fields' => 'ids', 'number' => 0]) as $slimifySiteId) {
+        switch_to_blog((int)$slimifySiteId);
         $slimifyUninstallSite();
         restore_current_blog();
     }

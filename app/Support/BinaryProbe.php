@@ -48,7 +48,7 @@ final class BinaryProbe
             return false;
         }
 
-        if (! $this->isMozjpegBinary($resolved)) {
+        if (!$this->isMozjpegBinary($resolved)) {
             $this->forgetCached('cjpeg');
             $moz = $this->locateMozjpeg();
             $map = $this->cachedMap();
@@ -109,7 +109,7 @@ final class BinaryProbe
             [
                 'id' => 'proc_open',
                 'label' => 'PHP proc_open()',
-                'available' => (bool) $probe['proc_open'],
+                'available' => (bool)$probe['proc_open'],
             ],
             [
                 'id' => 'pngquant',
@@ -134,7 +134,7 @@ final class BinaryProbe
             [
                 'id' => 'imagick',
                 'label' => 'Imagick (PHP extension)',
-                'available' => (bool) $probe['imagick'],
+                'available' => (bool)$probe['imagick'],
             ],
         ];
 
@@ -232,16 +232,16 @@ final class BinaryProbe
     /** Find a binary on the system. */
     private function locate(string $binary): string|false
     {
-        if (! $this->procOpenAvailable()) {
+        if (!$this->procOpenAvailable()) {
             return false;
         }
 
         $candidates = $this->candidatePaths($binary);
         foreach ($candidates as $candidate) {
-            if (! is_executable($candidate)) {
+            if (!is_executable($candidate)) {
                 continue;
             }
-            if ($binary === 'cjpeg' && ! $this->isMozjpegBinary($candidate)) {
+            if ($binary === 'cjpeg' && !$this->isMozjpegBinary($candidate)) {
                 continue;
             }
 
@@ -252,7 +252,7 @@ final class BinaryProbe
         if ($which['ok']) {
             $path = trim($which['stdout']);
             if ($path !== '' && is_executable($path)) {
-                if ($binary === 'cjpeg' && ! $this->isMozjpegBinary($path)) {
+                if ($binary === 'cjpeg' && !$this->isMozjpegBinary($path)) {
                     return false;
                 }
 
@@ -277,14 +277,12 @@ final class BinaryProbe
             ]);
         }
 
-        $paths = array_merge($paths, [
+        return array_merge($paths, [
             '/opt/homebrew/bin/' . $binary,
             '/usr/local/bin/' . $binary,
             '/usr/bin/' . $binary,
             '/bin/' . $binary,
         ]);
-
-        return $paths;
     }
 
     /** Find a MozJPEG cjpeg binary. */
@@ -319,14 +317,16 @@ final class BinaryProbe
     /** Detected package manager name. */
     private function packageManager(): string
     {
-        foreach ([
-            'apt' => '/usr/bin/apt',
-            'apk' => '/sbin/apk',
-            'dnf' => '/usr/bin/dnf',
-            'yum' => '/usr/bin/yum',
-            'brew' => '/opt/homebrew/bin/brew',
-            'brew-intel' => '/usr/local/bin/brew',
-        ] as $manager => $path) {
+        foreach (
+            [
+                'apt' => '/usr/bin/apt',
+                'apk' => '/sbin/apk',
+                'dnf' => '/usr/bin/dnf',
+                'yum' => '/usr/bin/yum',
+                'brew' => '/opt/homebrew/bin/brew',
+                'brew-intel' => '/usr/local/bin/brew',
+            ] as $manager => $path
+        ) {
             if (is_executable($path)) {
                 return $manager === 'brew-intel' ? 'brew' : $manager;
             }

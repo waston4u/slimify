@@ -32,22 +32,22 @@ final class LibraryStats
      */
     public static function getCached(): ?array
     {
-        if (! function_exists('get_transient')) {
+        if (!function_exists('get_transient')) {
             return null;
         }
 
         $stored = get_transient(self::key());
         if (
-            ! is_array($stored)
-            || ! isset($stored['total'], $stored['compressed'], $stored['pending'])
+            !is_array($stored)
+            || !isset($stored['total'], $stored['compressed'], $stored['pending'])
         ) {
             return null;
         }
 
         return [
-            'total' => (int) $stored['total'],
-            'compressed' => (int) $stored['compressed'],
-            'pending' => (int) $stored['pending'],
+            'total' => (int)$stored['total'],
+            'compressed' => (int)$stored['compressed'],
+            'pending' => (int)$stored['pending'],
         ];
     }
 
@@ -56,14 +56,14 @@ final class LibraryStats
      */
     public static function putCache(array $status): void
     {
-        if (! function_exists('set_transient')) {
+        if (!function_exists('set_transient')) {
             return;
         }
 
         set_transient(self::key(), [
-            'total' => (int) $status['total'],
-            'compressed' => (int) $status['compressed'],
-            'pending' => (int) $status['pending'],
+            'total' => (int)$status['total'],
+            'compressed' => (int)$status['compressed'],
+            'pending' => (int)$status['pending'],
         ], self::TTL);
     }
 }

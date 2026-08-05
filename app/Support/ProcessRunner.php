@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+// phpcs:disable WordPress.WP.AlternativeFunctions -- real media paths, flock locks, and CLI temp files.
+
 namespace Slimify\Support;
 
 final class ProcessRunner
@@ -9,7 +11,7 @@ final class ProcessRunner
     /** Run a process with a timeout. */
     public function run(array $command, int $timeoutSeconds = Limits::PROCESS_TIMEOUT_SECONDS): array
     {
-        if ($command === [] || ! function_exists('proc_open')) {
+        if ($command === [] || !function_exists('proc_open')) {
             return [
                 'ok' => false,
                 'code' => 127,
@@ -26,11 +28,12 @@ final class ProcessRunner
             2 => ['pipe', 'w'],
         ];
 
+        // phpcs:ignore Generic.PHP.ForbiddenFunctions.Found -- local pngquant/cjpeg/jpegoptim/cwebp require CLI spawn with pipes; no WP API equivalent.
         $process = @proc_open($command, $descriptors, $pipes, null, null, [
             'bypass_shell' => true,
         ]);
 
-        if (! is_resource($process)) {
+        if (!is_resource($process)) {
             return [
                 'ok' => false,
                 'code' => 127,
@@ -51,10 +54,10 @@ final class ProcessRunner
 
         while (true) {
             $status = proc_get_status($process);
-            $stdout = $this->appendCapped($stdout, (string) stream_get_contents($pipes[1]));
-            $stderr = $this->appendCapped($stderr, (string) stream_get_contents($pipes[2]));
+            $stdout = $this->appendCapped($stdout, (string)stream_get_contents($pipes[1]));
+            $stderr = $this->appendCapped($stderr, (string)stream_get_contents($pipes[2]));
 
-            if (! $status['running']) {
+            if (!$status['running']) {
                 break;
             }
 
@@ -65,8 +68,8 @@ final class ProcessRunner
                 $drainUntil = microtime(true) + 2.0;
                 while (microtime(true) < $drainUntil) {
                     $status = proc_get_status($process);
-                    $stdout = $this->appendCapped($stdout, (string) @stream_get_contents($pipes[1]));
-                    $stderr = $this->appendCapped($stderr, (string) @stream_get_contents($pipes[2]));
+                    $stdout = $this->appendCapped($stdout, (string)@stream_get_contents($pipes[1]));
+                    $stderr = $this->appendCapped($stderr, (string)@stream_get_contents($pipes[2]));
                     if (empty($status['running'])) {
                         break;
                     }
@@ -82,8 +85,8 @@ final class ProcessRunner
             @stream_select($read, $write, $except, 0, 100000);
         }
 
-        $stdout = $this->appendCapped($stdout, (string) @stream_get_contents($pipes[1]));
-        $stderr = $this->appendCapped($stderr, (string) @stream_get_contents($pipes[2]));
+        $stdout = $this->appendCapped($stdout, (string)@stream_get_contents($pipes[1]));
+        $stderr = $this->appendCapped($stderr, (string)@stream_get_contents($pipes[2]));
         if (is_resource($pipes[1])) {
             fclose($pipes[1]);
         }
@@ -96,8 +99,8 @@ final class ProcessRunner
         }
 
         $code = @proc_close($process);
-        if (! $timedOut && isset($status['exitcode']) && (int) $status['exitcode'] >= 0) {
-            $code = (int) $status['exitcode'];
+        if (!$timedOut && isset($status['exitcode']) && (int)$status['exitcode'] >= 0) {
+            $code = (int)$status['exitcode'];
         }
 
         if ($timedOut) {
@@ -125,9 +128,9 @@ final class ProcessRunner
             return;
         }
 
-        $pid = isset($status['pid']) ? (int) $status['pid'] : 0;
+        $pid = isset($status['pid']) ? (int)$status['pid'] : 0;
         if ($pid > 0 && function_exists('posix_kill')) {
-            if (! $force) {
+            if (!$force) {
                 @posix_kill($pid, 15);
                 @posix_kill(-$pid, 15);
                 usleep(200_000);
@@ -144,10 +147,10 @@ final class ProcessRunner
         }
 
         @proc_terminate($process, $force ? 9 : 15);
-        if (! $force) {
+        if (!$force) {
             usleep(200_000);
             $status = proc_get_status($process);
-            if (! empty($status['running'])) {
+            if (!empty($status['running'])) {
                 @proc_terminate($process, 9);
             }
         }

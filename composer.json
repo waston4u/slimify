@@ -1,5 +1,5 @@
 {
-    "name": "ultimate/slimify",
+    "name": "ms/slimify",
     "description": "Custom Media Compressor — zero-bloat local image compression (pngquant + MozJPEG).",
     "version": "1.0.0",
     "type": "wordpress-plugin",

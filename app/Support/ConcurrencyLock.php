@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+// phpcs:disable WordPress.WP.AlternativeFunctions -- real media paths, flock locks, and CLI temp files.
+
 namespace Slimify\Support;
 
 final class ConcurrencyLock
@@ -20,7 +22,7 @@ final class ConcurrencyLock
 
         $path = $this->lockPath();
         $dir = dirname($path);
-        if (! is_dir($dir) && ! wp_mkdir_p($dir)) {
+        if (!is_dir($dir) && !wp_mkdir_p($dir)) {
             return false;
         }
 
@@ -32,11 +34,11 @@ final class ConcurrencyLock
         }
 
         $flags = LOCK_EX;
-        if (! $blocking) {
+        if (!$blocking) {
             $flags |= LOCK_NB;
         }
 
-        if (! flock($handle, $flags)) {
+        if (!flock($handle, $flags)) {
             fclose($handle);
 
             return false;
@@ -44,7 +46,7 @@ final class ConcurrencyLock
 
         $this->handle = $handle;
         ftruncate($handle, 0);
-        fwrite($handle, (string) getmypid());
+        fwrite($handle, (string)getmypid());
         fflush($handle);
 
         return true;

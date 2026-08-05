@@ -24,7 +24,7 @@ final class RemoteUrlGuard
             return false;
         }
 
-        if (! str_starts_with($url, 'https://') && ! str_starts_with($url, 'http://')) {
+        if (!str_starts_with($url, 'https://') && !str_starts_with($url, 'http://')) {
             return false;
         }
 
@@ -32,17 +32,17 @@ final class RemoteUrlGuard
             return false;
         }
 
-        $parts = function_exists('wp_parse_url') ? wp_parse_url($url) : parse_url($url);
-        if (! is_array($parts) || empty($parts['host'])) {
+        $parts = wp_parse_url($url);
+        if (!is_array($parts) || empty($parts['host'])) {
             return false;
         }
 
         // Reject URL userinfo.
-        if (! empty($parts['user']) || ! empty($parts['pass'])) {
+        if (!empty($parts['user']) || !empty($parts['pass'])) {
             return false;
         }
 
-        $host = strtolower(trim((string) $parts['host'], '[]'));
+        $host = strtolower(trim((string)$parts['host'], '[]'));
         if ($host === '' || $host === 'localhost') {
             return false;
         }
@@ -67,7 +67,7 @@ final class RemoteUrlGuard
         }
 
         foreach ($addresses as $address) {
-            if (! self::isPublicAddress($address)) {
+            if (!self::isPublicAddress($address)) {
                 return false;
             }
         }
@@ -135,7 +135,7 @@ final class RemoteUrlGuard
             return false;
         }
 
-        return ! self::isInExtraBlockedRange($address);
+        return !self::isInExtraBlockedRange($address);
     }
 
     /** True if the address is in a blocked range. */

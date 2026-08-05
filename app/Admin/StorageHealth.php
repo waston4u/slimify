@@ -11,6 +11,7 @@ use Slimify\Support\RuntimePaths;
 use Slimify\Support\Settings;
 use Slimify\Support\Site;
 
+
 /** Backup path and exposure probes for the settings page. */
 final class StorageHealth
 {
@@ -87,7 +88,7 @@ final class StorageHealth
      */
     public function probeExposure(bool $force = false): string
     {
-        if (! $force && get_transient(self::transientKey()) !== false) {
+        if (!$force && get_transient(self::transientKey()) !== false) {
             return $this->exposure();
         }
 
@@ -110,10 +111,10 @@ final class StorageHealth
         }
 
         $uploads = wp_upload_dir();
-        $basedir = isset($uploads['basedir']) ? realpath((string) $uploads['basedir']) : false;
-        $baseurl = isset($uploads['baseurl']) ? (string) $uploads['baseurl'] : '';
+        $basedir = isset($uploads['basedir']) ? realpath((string)$uploads['basedir']) : false;
+        $baseurl = isset($uploads['baseurl']) ? (string)$uploads['baseurl'] : '';
 
-        if ($basedir === false || $baseurl === '' || ! str_starts_with($root, $basedir . DIRECTORY_SEPARATOR)) {
+        if ($basedir === false || $baseurl === '' || !str_starts_with($root, $basedir . DIRECTORY_SEPARATOR)) {
             return Site::isInsidePublicWebRoot($root) ? 'unknown' : 'protected';
         }
 
@@ -134,7 +135,7 @@ final class StorageHealth
             'headers' => ['Cache-Control' => 'no-cache'],
         ]);
 
-        @unlink($canary);
+        wp_delete_file($canary);
 
         if (is_wp_error($response)) {
             return 'unknown';
@@ -152,7 +153,7 @@ final class StorageHealth
     /** Register admin storage notices. */
     public function registerNotice(): void
     {
-        if (! is_admin() || wp_doing_ajax()) {
+        if (!is_admin() || wp_doing_ajax()) {
             return;
         }
 
@@ -162,7 +163,7 @@ final class StorageHealth
     /** Render admin storage notices. */
     public function renderNotice(): void
     {
-        if (! AjaxAuth::canManage()) {
+        if (!AjaxAuth::canManage()) {
             return;
         }
 

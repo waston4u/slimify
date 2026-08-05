@@ -21,7 +21,7 @@ final readonly class CliCommand
     /** Register hooks. */
     public static function register(CompressionService $compressionService, OffloadAdapter $offloadAdapter): void
     {
-        if (! class_exists('WP_CLI')) {
+        if (!class_exists('WP_CLI')) {
             return;
         }
 
@@ -64,7 +64,7 @@ final readonly class CliCommand
             ? max(1, min(Limits::CLI_BATCH_SIZE_MAX, absint($assocArgs['batch-size'])))
             : Limits::CLI_BATCH_SIZE;
 
-        if (! $all && $attachmentId <= 0) {
+        if (!$all && $attachmentId <= 0) {
             \WP_CLI::error('Provide --all or --attachment=<id>.');
         }
 
@@ -129,7 +129,7 @@ final readonly class CliCommand
 
         $progress->finish();
 
-        if (! $dryRun) {
+        if (!$dryRun) {
             $safety = 0;
             while ($this->compressionService->queue()->count() > 0 && $safety < 200) {
                 $this->compressionService->drainQueue(Limits::QUEUE_DRAIN_MAX, $this->offloadAdapter);
@@ -148,12 +148,12 @@ final readonly class CliCommand
         }
 
         $result = $this->offloadAdapter->compressAttachment($id, $dryRun);
-        if (! empty($result['busy'])) {
+        if (!empty($result['busy'])) {
             // Wait briefly for the compress lock.
-            if (! $dryRun) {
+            if (!$dryRun) {
                 usleep(200_000);
                 $retry = $this->offloadAdapter->compressAttachment($id, false);
-                if (! empty($retry['busy'])) {
+                if (!empty($retry['busy'])) {
                     $this->compressionService->queue()->push($id);
 
                     return 'skip';

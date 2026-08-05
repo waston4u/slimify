@@ -41,7 +41,7 @@ final class DriverResolver
         $useBinaries = $this->settings->useBinaries();
 
         foreach ($this->drivers as $driver) {
-            if (! $driver->supports($mimeType)) {
+            if (!$driver->supports($mimeType)) {
                 continue;
             }
 
@@ -52,7 +52,7 @@ final class DriverResolver
                 continue;
             }
 
-            if (! $useBinaries) {
+            if (!$useBinaries) {
                 continue;
             }
 

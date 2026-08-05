@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+// phpcs:disable WordPress.WP.AlternativeFunctions -- atomic temp-to-media file replace after CLI encode.
+
 namespace Slimify\Compression\Drivers;
 
 use Slimify\Compression\CompressorInterface;
@@ -9,6 +11,7 @@ use Slimify\Support\BinaryProbe;
 use Slimify\Support\Limits;
 use Slimify\Support\PathGuard;
 use Slimify\Support\Settings;
+
 
 final readonly class ImagickDriver implements CompressorInterface
 {
@@ -37,7 +40,7 @@ final readonly class ImagickDriver implements CompressorInterface
     {
         $this->pathGuard->assertAllowed($filePath);
 
-        if (! $this->isAvailable()) {
+        if (!$this->isAvailable()) {
             return false;
         }
 
@@ -46,8 +49,8 @@ final readonly class ImagickDriver implements CompressorInterface
             return false;
         }
 
-        $mime = (string) (wp_check_filetype($filePath)['type'] ?? '');
-        if (! in_array($mime, ['image/jpeg', 'image/jpg', 'image/png'], true)) {
+        $mime = (string)(wp_check_filetype($filePath)['type'] ?? '');
+        if (!in_array($mime, ['image/jpeg', 'image/jpg', 'image/png'], true)) {
             return false;
         }
 
@@ -59,8 +62,8 @@ final readonly class ImagickDriver implements CompressorInterface
             Limits::applyImagickResourceLimits();
             $image = new \Imagick();
             $image->readImage($filePath);
-            $format = strtolower((string) $image->getImageFormat());
-            if (! in_array($format, ['jpeg', 'jpg', 'png'], true)) {
+            $format = strtolower((string)$image->getImageFormat());
+            if (!in_array($format, ['jpeg', 'jpg', 'png'], true)) {
                 return false;
             }
             $image->stripImage();
@@ -73,13 +76,13 @@ final readonly class ImagickDriver implements CompressorInterface
                 $image->setInterlaceScheme(\Imagick::INTERLACE_PLANE);
             } else {
                 $image->setImageFormat('png');
-                $image->setImageCompressionQuality(max(0, min(9, (int) round((100 - $quality) / 10))));
+                $image->setImageCompressionQuality(max(0, min(9, (int)round((100 - $quality) / 10))));
                 if (method_exists($image, 'setOption')) {
                     $image->setOption('png:compression-level', '9');
                 }
             }
 
-            if (! $image->writeImage($temp)) {
+            if (!$image->writeImage($temp)) {
                 return false;
             }
 
@@ -89,7 +92,7 @@ final readonly class ImagickDriver implements CompressorInterface
                 return false;
             }
 
-            if (! @rename($temp, $filePath) && ! @copy($temp, $filePath)) {
+            if (!@rename($temp, $filePath) && !@copy($temp, $filePath)) {
                 return false;
             }
 
@@ -104,7 +107,7 @@ final readonly class ImagickDriver implements CompressorInterface
                 $image->destroy();
             }
             if (is_file($temp)) {
-                @unlink($temp);
+                wp_delete_file($temp);
             }
         }
     }

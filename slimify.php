@@ -1,22 +1,22 @@
 <?php
 
 /**
- * Plugin Name: Slimify Media Compressor
- * Description: Local JPEG and PNG compression with optional WebP siblings. pngquant, MozJPEG, jpegoptim, and Imagick. No remote API.
+ * Plugin Name: Slimify
+ * Description: Lightweight, high-performance image compression and automatic WebP conversion to speed up your WordPress site.
  * Version: 1.0.0
  * Requires at least: 6.4
+ * Tested up to: 7.0
  * Requires PHP: 8.4
  * Author: Miro Sedlacek
  * Text Domain: slimify
  * Domain Path: /languages
  * License: GPL-3.0-or-later
  * License URI: https://www.gnu.org/licenses/gpl-3.0.html
- * Update URI: false
  */
 
 declare(strict_types=1);
 
-if (! defined('ABSPATH')) {
+if (!defined('ABSPATH')) {
     exit;
 }
 
@@ -31,7 +31,7 @@ if (is_readable($slimifyAutoload)) {
 } else {
     spl_autoload_register(static function (string $class): void {
         $prefix = 'Slimify\\';
-        if (! str_starts_with($class, $prefix)) {
+        if (!str_starts_with($class, $prefix)) {
             return;
         }
 

@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+// phpcs:disable WordPress.WP.AlternativeFunctions -- real media paths, flock locks, and CLI temp files.
+
 namespace Slimify\Compression;
 
 use Random\RandomException;
@@ -16,6 +18,7 @@ use Slimify\Support\Settings;
 use Slimify\Support\Site;
 use Slimify\Webp\WebpService;
 use Slimify\Offload\OffloadAdapter;
+
 
 final class CompressionService
 {
@@ -82,7 +85,7 @@ final class CompressionService
             return;
         }
 
-        update_post_meta($attachmentId, self::META_PROCESSING, (string) time());
+        update_post_meta($attachmentId, self::META_PROCESSING, (string)time());
     }
 
     /** Clear the processing marker. */
@@ -105,7 +108,7 @@ final class CompressionService
         // Finished is not processing.
         if ($this->isFlagged($attachmentId)) {
             $stats = get_post_meta($attachmentId, self::META_STATS, true);
-            if (! is_array($stats) || ($stats['status'] ?? '') !== 'partial') {
+            if (!is_array($stats) || ($stats['status'] ?? '') !== 'partial') {
                 $this->clearProcessing($attachmentId);
 
                 return false;
@@ -124,7 +127,7 @@ final class CompressionService
             return false;
         }
 
-        $started = is_numeric($raw) ? (int) $raw : 0;
+        $started = is_numeric($raw) ? (int)$raw : 0;
         if ($started > 0 && (time() - $started) > self::PROCESSING_STALE_SECONDS) {
             $this->clearProcessing($attachmentId);
 
@@ -150,15 +153,15 @@ final class CompressionService
             return;
         }
 
-        $mime = (string) get_post_mime_type($attachmentId);
-        if (! Limits::isSupportedMime($mime)) {
+        $mime = (string)get_post_mime_type($attachmentId);
+        if (!Limits::isSupportedMime($mime)) {
             $this->clearProcessing($attachmentId);
 
             return;
         }
 
         $this->markProcessing($attachmentId);
-        if (! $this->queue->push($attachmentId)) {
+        if (!$this->queue->push($attachmentId)) {
             // Enqueue failed: clear processing.
             $this->clearProcessing($attachmentId);
             $this->lastOutcome = 'failed';
@@ -197,7 +200,7 @@ final class CompressionService
                 continue;
             }
 
-            if ($this->isFlagged($attachmentId) && ! $this->isIncompleteFlag($attachmentId)) {
+            if ($this->isFlagged($attachmentId) && !$this->isIncompleteFlag($attachmentId)) {
                 $this->clearProcessing($attachmentId);
                 $this->clearQueueAttempts($attachmentId);
                 $this->queue->remove($attachmentId);
@@ -205,8 +208,8 @@ final class CompressionService
                 continue;
             }
 
-            $mime = (string) get_post_mime_type($attachmentId);
-            if (! Limits::isSupportedMime($mime)) {
+            $mime = (string)get_post_mime_type($attachmentId);
+            if (!Limits::isSupportedMime($mime)) {
                 $this->clearProcessing($attachmentId);
                 $this->clearQueueAttempts($attachmentId);
                 $this->queue->remove($attachmentId);
@@ -219,7 +222,7 @@ final class CompressionService
                 $outcome = $this->mapOffloadDrainResult($attachmentId, $result);
             } else {
                 $metadata = wp_get_attachment_metadata($attachmentId);
-                if (! is_array($metadata)) {
+                if (!is_array($metadata)) {
                     $metadata = [];
                 }
 
@@ -267,7 +270,7 @@ final class CompressionService
     /** Map an offload result to a queue outcome. */
     private function mapOffloadDrainResult(int $attachmentId, array $result): string
     {
-        if (! empty($result['busy'])) {
+        if (!empty($result['busy'])) {
             return 'busy';
         }
 
@@ -290,7 +293,7 @@ final class CompressionService
 
         $this->clearProcessing($attachmentId);
 
-        if (! empty($result['permanent'])) {
+        if (!empty($result['permanent'])) {
             LibraryStats::invalidate();
 
             return 'skipped';
@@ -311,7 +314,7 @@ final class CompressionService
             'driver' => null,
         ];
 
-        if (! $this->pathGuard->isAllowed($filePath)) {
+        if (!$this->pathGuard->isAllowed($filePath)) {
             $result['skipped'] = true;
 
             return $result;
@@ -322,19 +325,19 @@ final class CompressionService
         $result['bytes_before'] = $before !== false ? $before : 0;
         $result['bytes_after'] = $result['bytes_before'];
 
-        if (! Limits::isFileWithinLimits($filePath)) {
+        if (!Limits::isFileWithinLimits($filePath)) {
             $result['skipped'] = true;
 
             return $result;
         }
 
-        $mime = (string) (wp_check_filetype($filePath)['type'] ?? '');
+        $mime = (string)(wp_check_filetype($filePath)['type'] ?? '');
         if ($mime === '') {
             $finfo = function_exists('mime_content_type') ? mime_content_type($filePath) : false;
             $mime = is_string($finfo) ? $finfo : '';
         }
 
-        if ($mime === '' || ! Limits::isSupportedMime($mime)) {
+        if ($mime === '' || !Limits::isSupportedMime($mime)) {
             $result['skipped'] = true;
 
             return $result;
@@ -366,7 +369,7 @@ final class CompressionService
                     if ($result['compressed']) {
                         $result['driver'] = $this->driverName($driver::class);
                     }
-                } catch ( Throwable) {
+                } catch (Throwable) {
                     $result['compressed'] = false;
                 }
             }
@@ -383,7 +386,7 @@ final class CompressionService
             }
         } finally {
             if (is_string($ownedSnapshot) && $ownedSnapshot !== '' && is_file($ownedSnapshot)) {
-                @unlink($ownedSnapshot);
+                wp_delete_file($ownedSnapshot);
             }
         }
 
@@ -394,7 +397,7 @@ final class CompressionService
     private function snapshotForWebpEncode(string $filePath, string $mime): ?string
     {
         $sourceReal = realpath($filePath);
-        if ($sourceReal === false || ! is_file($sourceReal) || ! is_readable($sourceReal)) {
+        if ($sourceReal === false || !is_file($sourceReal) || !is_readable($sourceReal)) {
             return null;
         }
 
@@ -404,7 +407,7 @@ final class CompressionService
         } elseif (str_contains($mime, 'jpeg') || str_contains($mime, 'jpg')) {
             $ext = '.jpg';
         } else {
-            $fromName = strtolower((string) pathinfo($sourceReal, PATHINFO_EXTENSION));
+            $fromName = strtolower((string)pathinfo($sourceReal, PATHINFO_EXTENSION));
             if ($fromName !== '') {
                 $ext = '.' . $fromName;
             }
@@ -412,7 +415,7 @@ final class CompressionService
 
         $base = function_exists('wp_tempnam')
             ? wp_tempnam('slimify-webp-src')
-            : (string) tempnam(sys_get_temp_dir(), 'slimify-webp-src');
+            : (string)tempnam(sys_get_temp_dir(), 'slimify-webp-src');
 
         if ($base === '' || $base === '0') {
             return null;
@@ -420,11 +423,11 @@ final class CompressionService
 
         $dest = $base . $ext;
         if ($dest !== $base && is_file($base)) {
-            @unlink($base);
+            wp_delete_file($base);
         }
 
-        if (! @copy($sourceReal, $dest)) {
-            @unlink($dest);
+        if (!@copy($sourceReal, $dest)) {
+            wp_delete_file($dest);
 
             return null;
         }
@@ -444,7 +447,7 @@ final class CompressionService
             return $metadata;
         }
 
-        if (! $this->lock->acquire(false)) {
+        if (!$this->lock->acquire(false)) {
             if ($attachmentId > 0) {
                 $this->markProcessing($attachmentId);
                 if ($this->queue->push($attachmentId)) {
@@ -475,7 +478,7 @@ final class CompressionService
                 $this->markProcessing($attachmentId);
             }
 
-            $file = isset($metadata['file']) ? (string) $metadata['file'] : '';
+            $file = isset($metadata['file']) ? (string)$metadata['file'] : '';
             if ($file === '') {
                 $attached = get_attached_file($attachmentId);
                 if (is_string($attached) && $attached !== '') {
@@ -484,7 +487,7 @@ final class CompressionService
             }
 
             $uploads = wp_upload_dir();
-            $basedir = (string) ($uploads['basedir'] ?? '');
+            $basedir = (string)($uploads['basedir'] ?? '');
             $baseReal = $basedir !== '' ? realpath($basedir) : false;
             if ($basedir === '' || $baseReal === false) {
                 if ($attachmentId > 0) {
@@ -505,7 +508,7 @@ final class CompressionService
             if (is_array($priorStats) && isset($priorStats['processed_keys']) && is_array($priorStats['processed_keys'])) {
                 foreach ($priorStats['processed_keys'] as $k) {
                     if (is_string($k) || is_int($k)) {
-                        $processedKeys[(string) $k] = true;
+                        $processedKeys[(string)$k] = true;
                     }
                 }
             }
@@ -560,7 +563,7 @@ final class CompressionService
                     return $metadata;
                 }
 
-                if (! isset($originals['full']) || ! is_array($originals['full'])) {
+                if (!isset($originals['full']) || !is_array($originals['full'])) {
                     $backup = $this->backupOriginal($basedir, $backupSource);
                     if ($backup === null) {
                         $this->clearProcessing($attachmentId);
@@ -595,10 +598,10 @@ final class CompressionService
                     if ($sizeCount >= Limits::MAX_SIZES_PER_ATTACHMENT) {
                         break;
                     }
-                    if (! is_array($sizeData) || empty($sizeData['file'])) {
+                    if (!is_array($sizeData) || empty($sizeData['file'])) {
                         continue;
                     }
-                    $sizeFile = (string) $sizeData['file'];
+                    $sizeFile = (string)$sizeData['file'];
                     if ($sizeFile === '' || str_contains($sizeFile, '..')) {
                         continue;
                     }
@@ -609,7 +612,7 @@ final class CompressionService
                         && is_file($real)
                         && str_starts_with($real, $baseReal . DIRECTORY_SEPARATOR)
                     ) {
-                        $paths[(string) $sizeName] = $real;
+                        $paths[(string)$sizeName] = $real;
                         ++$sizeCount;
                     }
                 }
@@ -675,11 +678,11 @@ final class CompressionService
 
             if ($attachmentId > 0 && ($stats['files'] > 0 || $processedKeys !== [] || $originals !== [])) {
                 if (is_array($priorStats) && isset($priorStats['status']) && $priorStats['status'] === 'partial') {
-                    $stats['bytes_before'] += (int) ($priorStats['bytes_before'] ?? 0);
-                    $stats['bytes_after'] += (int) ($priorStats['bytes_after'] ?? 0);
-                    $stats['compressed_files'] += (int) ($priorStats['compressed_files'] ?? 0);
-                    $stats['skipped_files'] += (int) ($priorStats['skipped_files'] ?? 0);
-                    $stats['files'] += (int) ($priorStats['files'] ?? 0);
+                    $stats['bytes_before'] += (int)($priorStats['bytes_before'] ?? 0);
+                    $stats['bytes_after'] += (int)($priorStats['bytes_after'] ?? 0);
+                    $stats['compressed_files'] += (int)($priorStats['compressed_files'] ?? 0);
+                    $stats['skipped_files'] += (int)($priorStats['skipped_files'] ?? 0);
+                    $stats['files'] += (int)($priorStats['files'] ?? 0);
                     $stats['webp_files'] = count($webpMap);
                     if (isset($priorStats['drivers']) && is_array($priorStats['drivers'])) {
                         foreach ($priorStats['drivers'] as $d) {
@@ -692,20 +695,20 @@ final class CompressionService
 
                 $stats['bytes_saved'] = max(0, $stats['bytes_before'] - $stats['bytes_after']);
                 $stats['drivers'] = array_keys($stats['drivers']);
-                $stats['duration_ms'] = (int) round((microtime(true) - $started) * 1000);
+                $stats['duration_ms'] = (int)round((microtime(true) - $started) * 1000);
                 $stats['original_backups'] = isset($originals['full']) ? 1 : 0;
                 $stats['processed_keys'] = array_keys($processedKeys);
 
-                $allDone = ! $budgetExceeded && count($processedKeys) >= count($paths);
+                $allDone = !$budgetExceeded && count($processedKeys) >= count($paths);
                 $hadWork = $stats['compressed_files'] > 0 || $stats['webp_files'] > 0;
                 $attempted = max(0, $stats['files'] - $stats['skipped_files']);
 
-                if ($budgetExceeded && ! $allDone) {
+                if ($budgetExceeded && !$allDone) {
                     $stats['status'] = 'partial';
                     $this->lastOutcome = 'partial';
                     update_post_meta($attachmentId, self::META_STATS, $stats);
                     $this->markProcessing($attachmentId);
-                    if (! $this->queue->push($attachmentId)) {
+                    if (!$this->queue->push($attachmentId)) {
                         // Partial kept for a later drain.
                         $this->queue->scheduleDrain();
                     }
@@ -718,7 +721,7 @@ final class CompressionService
                 } elseif ($hadWork || $attempted > 0) {
                     // Mark finished (lock until restore when a backup exists).
                     $stats['status'] = $hadWork ? 'done' : 'skipped';
-                    if (! $hadWork) {
+                    if (!$hadWork) {
                         $stats['reason'] = 'no_gain';
                     }
                     update_post_meta($attachmentId, self::META_FLAG, '1');
@@ -767,7 +770,7 @@ final class CompressionService
     public function restoreAttachment(int $attachmentId): array
     {
         $stored = get_post_meta($attachmentId, self::META_ORIGINALS, true);
-        if (! is_array($stored) || $stored === []) {
+        if (!is_array($stored) || $stored === []) {
             return [
                 'ok' => false,
                 'message' => __('No original backup is available for this attachment.', 'slimify'),
@@ -787,7 +790,7 @@ final class CompressionService
             ];
         }
 
-        if (! $this->lock->acquire(false)) {
+        if (!$this->lock->acquire(false)) {
             return [
                 'ok' => false,
                 'message' => __('Another compression job is running. Try again shortly.', 'slimify'),
@@ -801,7 +804,7 @@ final class CompressionService
 
         try {
             $uploads = wp_upload_dir();
-            $basedir = isset($uploads['basedir']) ? (string) $uploads['basedir'] : '';
+            $basedir = isset($uploads['basedir']) ? (string)$uploads['basedir'] : '';
             $baseReal = $basedir !== '' ? realpath($basedir) : false;
             $backupRoot = $this->backupRoot();
             if ($baseReal === false || $backupRoot === null) {
@@ -820,9 +823,9 @@ final class CompressionService
                 ];
             }
 
-            $backup = $this->safePath($backupRoot, (string) $fullEntry['backup'], true);
-            $target = $this->safePath($baseReal, (string) $fullEntry['target'], false);
-            if ($backup === null || $target === null || ! is_file($backup)) {
+            $backup = $this->safePath($backupRoot, (string)$fullEntry['backup'], true);
+            $target = $this->safePath($baseReal, (string)$fullEntry['target'], false);
+            if ($backup === null || $target === null || !is_file($backup)) {
                 return [
                     'ok' => false,
                     'message' => __('An original backup file is missing.', 'slimify'),
@@ -834,7 +837,7 @@ final class CompressionService
             $this->deleteAttachmentWebps($attachmentId, $baseReal);
 
             $temp = dirname($target) . DIRECTORY_SEPARATOR . '.slimify-restore-' . bin2hex(random_bytes(8));
-            if (! @copy($backup, $temp)) {
+            if (!@copy($backup, $temp)) {
                 return [
                     'ok' => false,
                     'message' => __('Unable to stage an original file for restoration.', 'slimify'),
@@ -843,7 +846,7 @@ final class CompressionService
             }
             $temporaryFiles[] = $temp;
 
-            if (! wp_mkdir_p(dirname($target))) {
+            if (!wp_mkdir_p(dirname($target))) {
                 return [
                     'ok' => false,
                     'message' => __('Unable to prepare the restore destination.', 'slimify'),
@@ -851,7 +854,7 @@ final class CompressionService
                 ];
             }
 
-            if (! @rename($temp, $target)) {
+            if (!@rename($temp, $target) && !@copy($temp, $target)) {
                 return [
                     'ok' => false,
                     'message' => __('Unable to replace a compressed file with its original.', 'slimify'),
@@ -872,7 +875,7 @@ final class CompressionService
                 return wp_generate_attachment_metadata($attachmentId, $target);
             });
 
-            if (! is_array($newMeta)) {
+            if (!is_array($newMeta)) {
                 $newMeta = [];
             }
             unset($newMeta['slimify_webp']);
@@ -905,7 +908,7 @@ final class CompressionService
     {
         $map = get_post_meta($attachmentId, self::META_WEBP, true);
         $metadata = wp_get_attachment_metadata($attachmentId);
-        if (! is_array($map) && is_array($metadata) && isset($metadata['slimify_webp']) && is_array($metadata['slimify_webp'])) {
+        if (!is_array($map) && is_array($metadata) && isset($metadata['slimify_webp']) && is_array($metadata['slimify_webp'])) {
             $map = $metadata['slimify_webp'];
         }
 
@@ -914,21 +917,21 @@ final class CompressionService
         if (is_string($attached) && $attached !== '') {
             $paths[] = $attached;
         }
-        if (is_array($metadata) && ! empty($metadata['file'])) {
-            $full = $this->resolveFullPath($baseReal, (string) $metadata['file']);
+        if (is_array($metadata) && !empty($metadata['file'])) {
+            $full = $this->resolveFullPath($baseReal, (string)$metadata['file']);
             if ($full !== null) {
                 $paths[] = $full;
             }
             if (isset($metadata['sizes']) && is_array($metadata['sizes'])) {
                 $subdir = '';
-                if (str_contains((string) $metadata['file'], '/')) {
-                    $subdir = trailingslashit(dirname((string) $metadata['file']));
+                if (str_contains((string)$metadata['file'], '/')) {
+                    $subdir = trailingslashit(dirname((string)$metadata['file']));
                 }
                 foreach ($metadata['sizes'] as $sizeData) {
-                    if (! is_array($sizeData) || empty($sizeData['file'])) {
+                    if (!is_array($sizeData) || empty($sizeData['file'])) {
                         continue;
                     }
-                    $sizeFile = (string) $sizeData['file'];
+                    $sizeFile = (string)$sizeData['file'];
                     if ($sizeFile === '' || str_contains($sizeFile, '..')) {
                         continue;
                     }
@@ -944,7 +947,7 @@ final class CompressionService
         if (is_array($map)) {
             $dir = is_string($attached) && $attached !== '' ? dirname($attached) : '';
             foreach ($map as $basename) {
-                if (! is_string($basename) || $basename === '' || str_contains($basename, '/') || str_contains($basename, '\\')) {
+                if (!is_string($basename) || $basename === '' || str_contains($basename, '/') || str_contains($basename, '\\')) {
                     continue;
                 }
                 if ($dir !== '') {
@@ -954,15 +957,15 @@ final class CompressionService
         }
 
         foreach (array_unique($paths) as $path) {
-            if (! is_string($path) || $path === '') {
+            if (!is_string($path) || $path === '') {
                 continue;
             }
             $webp = preg_replace('/\.(jpe?g|png)$/i', '.webp', $path);
             if (is_string($webp) && $webp !== $path && is_file($webp)) {
-                @unlink($webp);
+                wp_delete_file($webp);
             }
             if (str_ends_with(strtolower($path), '.webp') && is_file($path)) {
-                @unlink($path);
+                wp_delete_file($path);
             }
         }
     }
@@ -1004,22 +1007,22 @@ final class CompressionService
 
         $keepPaths = [];
         foreach ($keep as $entry) {
-            if (is_array($entry) && ! empty($entry['backup'])) {
-                $keepPaths[(string) $entry['backup']] = true;
+            if (is_array($entry) && !empty($entry['backup'])) {
+                $keepPaths[(string)$entry['backup']] = true;
             }
         }
 
         foreach ($previous as $entry) {
-            if (! is_array($entry) || empty($entry['backup'])) {
+            if (!is_array($entry) || empty($entry['backup'])) {
                 continue;
             }
-            $rel = (string) $entry['backup'];
+            $rel = (string)$entry['backup'];
             if (isset($keepPaths[$rel])) {
                 continue;
             }
             $path = $this->safePath($backupRoot, $rel, true);
             if ($path !== null) {
-                @unlink($path);
+                wp_delete_file($path);
             }
         }
     }
@@ -1035,12 +1038,12 @@ final class CompressionService
         $backupRoot = $this->backupRoot();
         if (is_array($stored) && $backupRoot !== null) {
             foreach ($stored as $entry) {
-                if (! is_array($entry) || empty($entry['backup'])) {
+                if (!is_array($entry) || empty($entry['backup'])) {
                     continue;
                 }
-                $path = $this->safePath($backupRoot, (string) $entry['backup'], true);
+                $path = $this->safePath($backupRoot, (string)$entry['backup'], true);
                 if ($path !== null) {
-                    @unlink($path);
+                    wp_delete_file($path);
                 }
             }
         }
@@ -1092,12 +1095,12 @@ final class CompressionService
     /** True if another compress needs a restore first. */
     public function isLocked(int $attachmentId): bool
     {
-        if (! $this->isFlagged($attachmentId)) {
+        if (!$this->isFlagged($attachmentId)) {
             return false;
         }
 
         $stats = get_post_meta($attachmentId, self::META_STATS, true);
-        $status = is_array($stats) ? (string) ($stats['status'] ?? '') : '';
+        $status = is_array($stats) ? (string)($stats['status'] ?? '') : '';
 
         if ($status === 'ineligible') {
             return false;
@@ -1108,7 +1111,7 @@ final class CompressionService
         }
 
         // No backup: unlock for re-compress.
-        if (! $this->hasOriginalBackup($attachmentId)) {
+        if (!$this->hasOriginalBackup($attachmentId)) {
             return false;
         }
 
@@ -1123,11 +1126,11 @@ final class CompressionService
         }
 
         $stored = get_post_meta($attachmentId, self::META_ORIGINALS, true);
-        if (! is_array($stored) || empty($stored['full']) || ! is_array($stored['full'])) {
+        if (!is_array($stored) || empty($stored['full']) || !is_array($stored['full'])) {
             return false;
         }
 
-        return ! empty($stored['full']['backup']);
+        return !empty($stored['full']['backup']);
     }
 
     /** Clear the finished flag so compress can run again. */
@@ -1143,16 +1146,16 @@ final class CompressionService
     /** Clear unavailable when backup directory is writable again. */
     public function clearUnavailableIfRepairable(int $attachmentId): bool
     {
-        if ($attachmentId <= 0 || ! $this->isFlagged($attachmentId)) {
+        if ($attachmentId <= 0 || !$this->isFlagged($attachmentId)) {
             return false;
         }
 
         $stats = get_post_meta($attachmentId, self::META_STATS, true);
-        if (! is_array($stats) || ($stats['status'] ?? '') !== 'unavailable') {
+        if (!is_array($stats) || ($stats['status'] ?? '') !== 'unavailable') {
             return false;
         }
 
-        $reason = (string) ($stats['reason'] ?? '');
+        $reason = (string)($stats['reason'] ?? '');
         if ($reason !== 'backup_root_unavailable') {
             return false;
         }
@@ -1183,7 +1186,7 @@ final class CompressionService
      */
     private function recordQueueFailure(int $attachmentId): bool
     {
-        $attempts = (int) get_post_meta($attachmentId, self::META_QUEUE_ATTEMPTS, true);
+        $attempts = (int)get_post_meta($attachmentId, self::META_QUEUE_ATTEMPTS, true);
         ++$attempts;
         update_post_meta($attachmentId, self::META_QUEUE_ATTEMPTS, $attempts);
 
@@ -1218,8 +1221,8 @@ final class CompressionService
             $real = realpath($file);
             if (
                 $real === false
-                || ! is_file($real)
-                || ! str_starts_with($real, $baseReal . DIRECTORY_SEPARATOR)
+                || !is_file($real)
+                || !str_starts_with($real, $baseReal . DIRECTORY_SEPARATOR)
             ) {
                 return null;
             }
@@ -1231,8 +1234,8 @@ final class CompressionService
         $real = realpath($candidate);
         if (
             $real === false
-            || ! is_file($real)
-            || ! str_starts_with($real, $baseReal . DIRECTORY_SEPARATOR)
+            || !is_file($real)
+            || !str_starts_with($real, $baseReal . DIRECTORY_SEPARATOR)
         ) {
             return null;
         }
@@ -1243,15 +1246,15 @@ final class CompressionService
     /** Resolve a stored backup path. */
     private function resolveOriginalBackupPath(mixed $entry): ?string
     {
-        if (! is_array($entry) || empty($entry['backup'])) {
+        if (!is_array($entry) || empty($entry['backup'])) {
             return null;
         }
 
-        if (! isset($entry['storage']) || $entry['storage'] !== 'protected') {
+        if (!isset($entry['storage']) || $entry['storage'] !== 'protected') {
             return null;
         }
 
-        $relative = (string) $entry['backup'];
+        $relative = (string)$entry['backup'];
         if ($relative === '' || str_contains($relative, "\0")) {
             return null;
         }
@@ -1262,7 +1265,7 @@ final class CompressionService
         }
 
         $path = $this->safePath($root, $relative, true);
-        if ($path === null || ! is_file($path) || ! is_readable($path)) {
+        if ($path === null || !is_file($path) || !is_readable($path)) {
             return null;
         }
 
@@ -1281,7 +1284,7 @@ final class CompressionService
             $baseReal === false
             || $sourceReal === false
             || $backupRoot === null
-            || ! str_starts_with($sourceReal, $baseReal . DIRECTORY_SEPARATOR)
+            || !str_starts_with($sourceReal, $baseReal . DIRECTORY_SEPARATOR)
         ) {
             return null;
         }
@@ -1290,14 +1293,14 @@ final class CompressionService
         $backupRelative = $this->backupRelativePath($targetRelative);
         $backupPath = $backupRoot . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $backupRelative);
 
-        if (! is_file($backupPath)) {
-            if (! wp_mkdir_p(dirname($backupPath))) {
+        if (!is_file($backupPath)) {
+            if (!wp_mkdir_p(dirname($backupPath))) {
                 return null;
             }
 
             $temp = $backupPath . '.tmp-' . bin2hex(random_bytes(6));
-            if (! @copy($sourceReal, $temp) || ! @rename($temp, $backupPath)) {
-                @unlink($temp);
+            if (!@copy($sourceReal, $temp) || (!@rename($temp, $backupPath) && !@copy($temp, $backupPath))) {
+                wp_delete_file($temp);
 
                 return null;
             }
@@ -1332,13 +1335,13 @@ final class CompressionService
         }
 
         $stored = get_option(self::OPTION_BACKUP_PATH, '');
-        if (is_string($stored) && $stored !== '' && ! Site::isOwnedStoragePath($stored)) {
+        if (is_string($stored) && $stored !== '' && !Site::isOwnedStoragePath($stored)) {
             delete_option(self::OPTION_BACKUP_PATH);
         }
 
         $default = Site::backupRootCandidates()[0];
-        $candidate = (string) apply_filters('slimify_backup_directory', $default, $blogId);
-        if ($candidate === '' || ! Site::isOwnedStoragePath($candidate)) {
+        $candidate = (string)apply_filters('slimify_backup_directory', $default, $blogId);
+        if ($candidate === '' || !Site::isOwnedStoragePath($candidate)) {
             $candidate = $default;
         }
 
@@ -1362,20 +1365,20 @@ final class CompressionService
     /** Create and harden the backup root. */
     private function prepareBackupRoot(string $candidate): ?string
     {
-        if ($candidate === '' || ! Site::isOwnedStoragePath($candidate)) {
+        if ($candidate === '' || !Site::isOwnedStoragePath($candidate)) {
             return null;
         }
 
-        if (! is_dir($candidate) && ! wp_mkdir_p($candidate)) {
+        if (!is_dir($candidate) && !wp_mkdir_p($candidate)) {
             return null;
         }
 
         $real = realpath($candidate);
-        if ($real === false || ! is_writable($real) || Site::isCriticalDirectory($real)) {
+        if ($real === false || !is_writable($real) || Site::isCriticalDirectory($real)) {
             return null;
         }
 
-        if (! Site::isOwnedStoragePath($real)) {
+        if (!Site::isOwnedStoragePath($real)) {
             return null;
         }
 
@@ -1405,7 +1408,7 @@ final class CompressionService
         $parent = realpath(dirname($path));
         if (
             $parent === false
-            || ($parent !== $baseReal && ! str_starts_with($parent, $baseReal . DIRECTORY_SEPARATOR))
+            || ($parent !== $baseReal && !str_starts_with($parent, $baseReal . DIRECTORY_SEPARATOR))
         ) {
             return null;
         }
@@ -1418,7 +1421,7 @@ final class CompressionService
     {
         foreach ($files as $file) {
             if (is_file($file)) {
-                @unlink($file);
+                wp_delete_file($file);
             }
         }
     }
@@ -1431,4 +1434,5 @@ final class CompressionService
 
         return preg_replace('/Driver$/', '', $shortName) ?: $shortName;
     }
+
 }

@@ -13,6 +13,7 @@ use Slimify\Support\ProcessRunner;
 use Slimify\Support\Settings;
 use Slimify\Support\Site;
 
+
 final class WebpService
 {
     private const string OPTION_HAS_WEBP = 'slimify_has_webp';
@@ -66,7 +67,7 @@ final class WebpService
      */
     public function purgeStaleSiblings(mixed $metadata, int|string $attachmentId = 0): mixed
     {
-        $attachmentId = (int) $attachmentId;
+        $attachmentId = (int)$attachmentId;
         if ($attachmentId <= 0) {
             return $metadata;
         }
@@ -77,7 +78,7 @@ final class WebpService
         }
 
         $attached = get_attached_file($attachmentId, true);
-        if (! is_string($attached) || $attached === '' || ! is_file($attached)) {
+        if (!is_string($attached) || $attached === '' || !is_file($attached)) {
             return $metadata;
         }
 
@@ -88,11 +89,11 @@ final class WebpService
             $webpPath = $dir . DIRECTORY_SEPARATOR . $basename;
             $source = $this->sourceSiblingPath($webpPath);
 
-            if ($source === null || ! is_file($source)) {
+            if ($source === null || !is_file($source)) {
                 continue;
             }
 
-            if (! is_file($webpPath)) {
+            if (!is_file($webpPath)) {
                 unset($map[$sizeKey]);
                 $changed = true;
                 continue;
@@ -134,15 +135,15 @@ final class WebpService
     /** Send Vary: Accept when needed. */
     public function sendVaryAccept(): void
     {
-        if (headers_sent() || $this->isNonWebpContext() || ! $this->settings->generateWebp()) {
+        if (headers_sent() || $this->isNonWebpContext() || !$this->settings->generateWebp()) {
             return;
         }
 
-        if (! $this->siteHasWebp()) {
+        if (!$this->siteHasWebp()) {
             return;
         }
 
-        if (! $this->clientAcceptsWebp()) {
+        if (!$this->clientAcceptsWebp()) {
             return;
         }
 
@@ -150,7 +151,7 @@ final class WebpService
          * Full-page caches key on the raw Accept header, which fragments the cache badly
          * @param bool $send
          */
-        if (! apply_filters('slimify_send_vary_accept', true)) {
+        if (!apply_filters('slimify_send_vary_accept', true)) {
             return;
         }
 
@@ -166,7 +167,7 @@ final class WebpService
     /** Record that the site has WebP. */
     private function markSiteHasWebp(): void
     {
-        if (! $this->siteHasWebp()) {
+        if (!$this->siteHasWebp()) {
             update_option(self::OPTION_HAS_WEBP, '1', true);
         }
     }
@@ -206,18 +207,18 @@ final class WebpService
     /** Encode a WebP next to the deliverable. */
     private function createSibling(string $deliverablePath, string $encodeFrom): ?string
     {
-        if (! $this->settings->generateWebp()) {
+        if (!$this->settings->generateWebp()) {
             return null;
         }
 
-        if (! $this->pathGuard->isAllowed($deliverablePath) || ! Limits::isFileWithinLimits($deliverablePath)) {
+        if (!$this->pathGuard->isAllowed($deliverablePath) || !Limits::isFileWithinLimits($deliverablePath)) {
             return null;
         }
 
         if (
-            ! is_file($encodeFrom)
-            || ! is_readable($encodeFrom)
-            || ! $this->isAllowedEncodeSource($encodeFrom)
+            !is_file($encodeFrom)
+            || !is_readable($encodeFrom)
+            || !$this->isAllowedEncodeSource($encodeFrom)
         ) {
             return null;
         }
@@ -233,20 +234,20 @@ final class WebpService
             return null;
         }
 
-        if (! Limits::isFileWithinLimits($encodeFrom)) {
+        if (!Limits::isFileWithinLimits($encodeFrom)) {
             return null;
         }
 
-        $mime = (string) (wp_check_filetype($deliverablePath)['type'] ?? '');
+        $mime = (string)(wp_check_filetype($deliverablePath)['type'] ?? '');
         if ($mime === '') {
-            $mime = (string) (wp_check_filetype($encodeFrom)['type'] ?? '');
+            $mime = (string)(wp_check_filetype($encodeFrom)['type'] ?? '');
         }
-        if (! in_array($mime, ['image/jpeg', 'image/jpg', 'image/png'], true)) {
+        if (!in_array($mime, ['image/jpeg', 'image/jpg', 'image/png'], true)) {
             return null;
         }
 
         $webpPath = preg_replace('/\.(jpe?g|png)$/i', '.webp', $deliverablePath);
-        if (! is_string($webpPath) || $webpPath === $deliverablePath) {
+        if (!is_string($webpPath) || $webpPath === $deliverablePath) {
             $webpPath = $deliverablePath . '.webp';
         }
 
@@ -263,7 +264,7 @@ final class WebpService
         $qualities = $this->qualityLadder();
         /** @var list<int> $qualities */
         $qualities = apply_filters('slimify_webp_quality_ladder', $qualities);
-        if (! is_array($qualities)) {
+        if (!is_array($qualities)) {
             $qualities = $this->qualityLadder();
         }
 
@@ -272,11 +273,11 @@ final class WebpService
                 break;
             }
 
-            $quality = (int) $quality;
+            $quality = (int)$quality;
             $this->purgeWebp($webpPath);
             $created = $this->createWithCwebpQuality($encodeFrom, $webpPath, $quality, $mime);
 
-            if (! $created && (! $hasCwebp || $imagickUsed < 2)) {
+            if (!$created && (!$hasCwebp || $imagickUsed < 2)) {
                 if ($this->createWithImagick($encodeFrom, $webpPath, $quality)) {
                     $created = true;
                     ++$imagickUsed;
@@ -290,15 +291,15 @@ final class WebpService
 
         if ($hasCwebp) {
             $fractions = apply_filters('slimify_webp_size_fractions', [0.40]);
-            if (! is_array($fractions)) {
+            if (!is_array($fractions)) {
                 $fractions = [0.40];
             }
             foreach ($fractions as $fraction) {
                 if (microtime(true) >= $deadline) {
                     break;
                 }
-                $fraction = (float) $fraction;
-                $target = max(512, (int) floor($deliverableSize * $fraction));
+                $fraction = (float)$fraction;
+                $target = max(512, (int)floor($deliverableSize * $fraction));
                 if ($target >= $deliverableSize) {
                     continue;
                 }
@@ -320,7 +321,7 @@ final class WebpService
     /** True if WebP is smaller than the final file. */
     private function webpBeatsDeliverable(string $webpPath, int $deliverableSize): bool
     {
-        if ($deliverableSize <= 0 || ! is_file($webpPath)) {
+        if ($deliverableSize <= 0 || !is_file($webpPath)) {
             return false;
         }
 
@@ -334,7 +335,7 @@ final class WebpService
     private function purgeWebp(string $webpPath): void
     {
         if (is_file($webpPath)) {
-            @unlink($webpPath);
+            wp_delete_file($webpPath);
         }
     }
 
@@ -349,7 +350,7 @@ final class WebpService
         $command = [
             $binary,
             '-size',
-            (string) $targetBytes,
+            (string)$targetBytes,
             '-pass',
             '4',
             '-m',
@@ -372,7 +373,7 @@ final class WebpService
 
         $result = $this->runner->run($command, Limits::WEBP_TIMEOUT_SECONDS);
 
-        if (! $result['ok'] || ! is_file($dest)) {
+        if (!$result['ok'] || !is_file($dest)) {
             return false;
         }
 
@@ -393,7 +394,7 @@ final class WebpService
         $command = [
             $binary,
             '-q',
-            (string) max(0, min(100, $quality)),
+            (string)max(0, min(100, $quality)),
             '-m',
             '6',
             '-metadata',
@@ -420,7 +421,7 @@ final class WebpService
     /** Encode WebP with Imagick. */
     private function createWithImagick(string $source, string $dest, int $quality): bool
     {
-        if (! $this->probe->imagickAvailable()) {
+        if (!$this->probe->imagickAvailable()) {
             return false;
         }
 
@@ -429,10 +430,9 @@ final class WebpService
             $imagickClass = '\\Imagick';
             $image = new $imagickClass();
             $image->readImage($source);
-            $format = strtolower((string) $image->getImageFormat());
-            if (! in_array($format, ['jpeg', 'jpg', 'png'], true)) {
+            $format = strtolower($image->getImageFormat());
+            if (!in_array($format, ['jpeg', 'jpg', 'png'], true)) {
                 $image->clear();
-                $image->destroy();
 
                 return false;
             }
@@ -444,10 +444,9 @@ final class WebpService
             $image->stripImage();
             $ok = $image->writeImage($dest);
             $image->clear();
-            $image->destroy();
 
             return $ok && is_file($dest) && filesize($dest) > 0;
-        } catch ( Throwable) {
+        } catch (Throwable) {
             return false;
         }
     }
@@ -467,14 +466,14 @@ final class WebpService
     /** Rewrite attachment URL to WebP when appropriate. */
     public function filterAttachmentUrl(mixed $url, mixed $attachmentId): string
     {
-        $url = (string) $url;
-        $attachmentId = (int) $attachmentId;
+        $url = (string)$url;
+        $attachmentId = (int)$attachmentId;
 
         if (
             $attachmentId <= 0
-            || ! $this->settings->generateWebp()
+            || !$this->settings->generateWebp()
             || $this->isNonWebpContext()
-            || ! $this->clientAcceptsWebp()
+            || !$this->clientAcceptsWebp()
         ) {
             return $url;
         }
@@ -493,16 +492,16 @@ final class WebpService
     public function filterImageSrc(mixed $image, mixed $attachmentId, mixed $size, mixed $icon): mixed
     {
         if (
-            ! is_array($image)
+            !is_array($image)
             || empty($image[0])
-            || ! $this->settings->generateWebp()
+            || !$this->settings->generateWebp()
             || $this->isNonWebpContext()
-            || ! $this->clientAcceptsWebp()
+            || !$this->clientAcceptsWebp()
         ) {
             return $image;
         }
 
-        $webpUrl = $this->webpUrlForAttachment((int) $attachmentId, (string) $image[0]);
+        $webpUrl = $this->webpUrlForAttachment((int)$attachmentId, (string)$image[0]);
         if ($webpUrl !== null) {
             $image[0] = $webpUrl;
         }
@@ -524,25 +523,25 @@ final class WebpService
         mixed $attachmentId
     ): array {
         if (
-            ! is_array($sources)
-            || ! $this->settings->generateWebp()
+            !is_array($sources)
+            || !$this->settings->generateWebp()
             || $this->isNonWebpContext()
-            || ! $this->clientAcceptsWebp()
+            || !$this->clientAcceptsWebp()
         ) {
             return is_array($sources) ? $sources : [];
         }
 
-        $map = $this->webpMap((int) $attachmentId, is_array($imageMeta) ? $imageMeta : []);
+        $map = $this->webpMap((int)$attachmentId, is_array($imageMeta) ? $imageMeta : []);
         if ($map === []) {
             return $sources;
         }
 
         foreach ($sources as $width => $source) {
-            if (! is_array($source) || empty($source['url'])) {
+            if (!is_array($source) || empty($source['url'])) {
                 continue;
             }
-            $webpUrl = $this->swapUrlExtension((string) $source['url']);
-            if ($webpUrl !== null && $this->shouldServeWebp((int) $attachmentId, $webpUrl)) {
+            $webpUrl = $this->swapUrlExtension((string)$source['url']);
+            if ($webpUrl !== null && $this->shouldServeWebp((int)$attachmentId, $webpUrl)) {
                 $sources[$width]['url'] = $webpUrl;
             }
         }
@@ -563,7 +562,10 @@ final class WebpService
             return false;
         }
 
-        $accept = isset($_SERVER['HTTP_ACCEPT']) ? (string) $_SERVER['HTTP_ACCEPT'] : '';
+        $accept = '';
+        if (isset($_SERVER['HTTP_ACCEPT'])) {
+            $accept = sanitize_text_field(wp_unslash((string)$_SERVER['HTTP_ACCEPT']));
+        }
         self::$acceptsWebp = str_contains($accept, 'image/webp');
 
         return self::$acceptsWebp;
@@ -589,7 +591,7 @@ final class WebpService
             return true;
         }
 
-        if (is_admin() && ! wp_doing_ajax()) {
+        if (is_admin() && !wp_doing_ajax()) {
             return true;
         }
 
@@ -653,7 +655,7 @@ final class WebpService
     private function swapUrlExtension(string $url): ?string
     {
         $webp = preg_replace('/\.(jpe?g|png)(\?.*)?$/i', '.webp$2', $url);
-        if (! is_string($webp) || $webp === $url) {
+        if (!is_string($webp) || $webp === $url) {
             return null;
         }
 
@@ -674,23 +676,23 @@ final class WebpService
     /** Serve WebP only if mapped and the file exists. */
     private function resolveShouldServeWebp(int $attachmentId, string $webpUrl): bool
     {
-        $path = (string) (wp_parse_url($webpUrl, PHP_URL_PATH) ?? '');
+        $path = (string)(wp_parse_url($webpUrl, PHP_URL_PATH) ?? '');
         $basename = $path !== '' ? basename($path) : '';
         if (
             $basename === ''
             || str_contains($basename, '..')
-            || ! str_ends_with(strtolower($basename), '.webp')
+            || !str_ends_with(strtolower($basename), '.webp')
         ) {
             return false;
         }
 
         $map = $this->webpMap($attachmentId, []);
-        if (! in_array($basename, $map, true)) {
+        if (!in_array($basename, $map, true)) {
             return false;
         }
 
         $attached = get_attached_file($attachmentId, true);
-        if (! is_string($attached) || $attached === '') {
+        if (!is_string($attached) || $attached === '') {
             return false;
         }
 
@@ -709,7 +711,7 @@ final class WebpService
     private function dropWebpBasename(int $attachmentId, string $basename): void
     {
         $map = get_post_meta($attachmentId, CompressionService::META_WEBP, true);
-        if (! is_array($map)) {
+        if (!is_array($map)) {
             return;
         }
 
@@ -721,7 +723,7 @@ final class WebpService
             }
         }
 
-        if (! $changed) {
+        if (!$changed) {
             return;
         }
 

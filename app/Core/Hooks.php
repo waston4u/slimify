@@ -8,6 +8,7 @@ use Slimify\Compression\CompressionService;
 use Slimify\Offload\OffloadAdapter;
 use Slimify\Support\Limits;
 
+
 final readonly class Hooks
 {
     /** Constructor. */
@@ -33,8 +34,8 @@ final readonly class Hooks
             return;
         }
 
-        $mime = (string) get_post_mime_type($attachmentId);
-        if (! Limits::isSupportedMime($mime)) {
+        $mime = (string)get_post_mime_type($attachmentId);
+        if (!Limits::isSupportedMime($mime)) {
             return;
         }
 
@@ -54,8 +55,8 @@ final readonly class Hooks
             return $metadata;
         }
 
-        $mime = (string) get_post_mime_type($attachmentId);
-        if (! Limits::isSupportedMime($mime)) {
+        $mime = (string)get_post_mime_type($attachmentId);
+        if (!Limits::isSupportedMime($mime)) {
             return $metadata;
         }
 
@@ -76,7 +77,7 @@ final readonly class Hooks
         }
 
         $map = get_post_meta($attachmentId, CompressionService::META_WEBP, true);
-        if (! is_array($map)) {
+        if (!is_array($map)) {
             $metadata = wp_get_attachment_metadata($attachmentId);
             $map = (is_array($metadata) && isset($metadata['slimify_webp']) && is_array($metadata['slimify_webp']))
                 ? $metadata['slimify_webp']
@@ -88,12 +89,12 @@ final readonly class Hooks
 
         if ($dir !== '' && is_array($map)) {
             foreach ($map as $basename) {
-                if (! is_string($basename) || $basename === '' || str_contains($basename, '/') || str_contains($basename, '\\')) {
+                if (!is_string($basename) || $basename === '' || str_contains($basename, '/') || str_contains($basename, '\\')) {
                     continue;
                 }
                 $path = $dir . DIRECTORY_SEPARATOR . $basename;
                 if (is_file($path)) {
-                    @unlink($path);
+                    wp_delete_file($path);
                 }
             }
         }
@@ -101,7 +102,7 @@ final readonly class Hooks
         if (is_string($file) && $file !== '' && is_file($file)) {
             $sibling = preg_replace('/\.(jpe?g|png)$/i', '.webp', $file);
             if (is_string($sibling) && $sibling !== $file && is_file($sibling)) {
-                @unlink($sibling);
+                wp_delete_file($sibling);
             }
         }
 

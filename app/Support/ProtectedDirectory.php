@@ -9,8 +9,8 @@ final class ProtectedDirectory
     private const string HTACCESS = "Require all denied\nDeny from all\nOptions -Indexes\n";
 
     private const string WEB_CONFIG = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-                                      . '<configuration><system.webServer><authorization>'
-                                      . "<deny users=\"*\" /></authorization></system.webServer></configuration>\n";
+    . '<configuration><system.webServer><authorization>'
+    . "<deny users=\"*\" /></authorization></system.webServer></configuration>\n";
 
     private const string INDEX = "<?php\n// Silence is golden.\n";
 
@@ -42,7 +42,7 @@ final class ProtectedDirectory
     /** Write deny files for Apache and IIS. */
     public static function harden(string $directory): void
     {
-        if ($directory === '' || ! is_dir($directory)) {
+        if ($directory === '' || !is_dir($directory)) {
             return;
         }
 
@@ -54,7 +54,7 @@ final class ProtectedDirectory
             ] as $name => $contents
         ) {
             $path = $directory . DIRECTORY_SEPARATOR . $name;
-            if (! is_file($path)) {
+            if (!is_file($path)) {
                 @file_put_contents($path, $contents);
             }
         }

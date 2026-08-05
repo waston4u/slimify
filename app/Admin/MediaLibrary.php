@@ -37,7 +37,7 @@ final class MediaLibrary
     /** Enqueue media library assets on relevant screens. */
     public function enqueueAssets(string $hook): void
     {
-        if (! AjaxAuth::canManage()) {
+        if (!AjaxAuth::canManage()) {
             return;
         }
 
@@ -48,7 +48,7 @@ final class MediaLibrary
             'post.php',
             'post-new.php',
         ];
-        if (! in_array($hook, $allowed, true)) {
+        if (!in_array($hook, $allowed, true)) {
             return;
         }
 
@@ -66,6 +66,7 @@ final class MediaLibrary
                 'waitingQueue' => __('Slimify: Waiting in queue…', 'slimify'),
                 'processing' => __('Slimify: Processing…', 'slimify'),
                 'processingShort' => __('Processing…', 'slimify'),
+                // translators: %s: upload progress percentage.
                 'uploading' => __('Slimify: Uploading %s%…', 'slimify'),
                 'done' => __('Slimify: Done', 'slimify'),
                 'ready' => __('Slimify: Ready', 'slimify'),
@@ -83,7 +84,7 @@ final class MediaLibrary
     /** Add the Slimify media library column. */
     public function addColumn(array $columns): array
     {
-        if (! AjaxAuth::canManage()) {
+        if (!AjaxAuth::canManage()) {
             return $columns;
         }
 
@@ -95,7 +96,7 @@ final class MediaLibrary
     /** Render the Slimify media library column. */
     public function renderColumn(string $columnName, int $attachmentId): void
     {
-        if ($columnName !== self::COLUMN || ! AjaxAuth::canManageAttachment($attachmentId)) {
+        if ($columnName !== self::COLUMN || !AjaxAuth::canManageAttachment($attachmentId)) {
             return;
         }
 
@@ -105,7 +106,7 @@ final class MediaLibrary
     /** Add compress or restore row actions. */
     public function addRowAction(array $actions, WP_Post $post): array
     {
-        if (! $this->isEligible($post->ID) || ! AjaxAuth::canManageAttachment($post->ID)) {
+        if (!$this->isEligible($post->ID) || !AjaxAuth::canManageAttachment($post->ID)) {
             return $actions;
         }
 
@@ -125,7 +126,7 @@ final class MediaLibrary
                 $post->ID,
                 esc_html__('Restore original', 'slimify')
             );
-        } elseif (! $this->isProcessed($post->ID)) {
+        } elseif (!$this->isProcessed($post->ID)) {
             $actions['slimify'] = sprintf(
                 '<a href="#" class="slimify-compress-one" data-attachment-id="%d">%s</a>',
                 $post->ID,
@@ -139,7 +140,7 @@ final class MediaLibrary
     /** Add the attachment edit field. */
     public function addAttachmentField(array $fields, WP_Post $post): array
     {
-        if (! $this->isEligible($post->ID) || ! AjaxAuth::canManageAttachment($post->ID)) {
+        if (!$this->isEligible($post->ID) || !AjaxAuth::canManageAttachment($post->ID)) {
             return $fields;
         }
 
@@ -158,16 +159,16 @@ final class MediaLibrary
     {
         AjaxAuth::requireManageOptions('slimify_compress_attachment');
 
-        $attachmentId = isset($_POST['attachment_id']) ? absint($_POST['attachment_id']) : 0;
+        $attachmentId = $this->postAbsint('attachment_id');
         if ($attachmentId <= 0 || get_post_type($attachmentId) !== 'attachment') {
             wp_send_json_error(['message' => __('Invalid attachment.', 'slimify')], 400);
         }
 
-        if (! AjaxAuth::canManageAttachment($attachmentId)) {
+        if (!AjaxAuth::canManageAttachment($attachmentId)) {
             wp_send_json_error(['message' => __('Forbidden.', 'slimify')], 403);
         }
 
-        if (! $this->isEligible($attachmentId)) {
+        if (!$this->isEligible($attachmentId)) {
             wp_send_json_error([
                 'message' => __('Only JPEG and PNG attachments are supported.', 'slimify'),
             ], 422);
@@ -194,7 +195,7 @@ final class MediaLibrary
         $this->compressionService->markProcessing($attachmentId);
 
         $result = $this->offloadAdapter->compressAttachment($attachmentId, false);
-        if (! empty($result['busy'])) {
+        if (!empty($result['busy'])) {
             $this->compressionService->markProcessing($attachmentId);
             wp_send_json_error([
                 'busy' => true,
@@ -206,8 +207,8 @@ final class MediaLibrary
             ], 409);
         }
 
-        if (! $result['ok']) {
-            if (! $this->isRunFinished($attachmentId) && ! $this->isProcessing($attachmentId)) {
+        if (!$result['ok']) {
+            if (!$this->isRunFinished($attachmentId) && !$this->isProcessing($attachmentId)) {
                 $this->compressionService->clearProcessing($attachmentId);
             }
             wp_send_json_error([
@@ -250,23 +251,23 @@ final class MediaLibrary
     {
         AjaxAuth::requireManageOptions('slimify_compress_attachment');
 
-        $attachmentId = isset($_POST['attachment_id']) ? absint($_POST['attachment_id']) : 0;
+        $attachmentId = $this->postAbsint('attachment_id');
         if ($attachmentId <= 0 || get_post_type($attachmentId) !== 'attachment') {
             wp_send_json_error(['message' => __('Invalid attachment.', 'slimify')], 400);
         }
 
-        if (! AjaxAuth::canManageAttachment($attachmentId)) {
+        if (!AjaxAuth::canManageAttachment($attachmentId)) {
             wp_send_json_error(['message' => __('Forbidden.', 'slimify')], 403);
         }
 
-        if (! $this->isEligible($attachmentId)) {
+        if (!$this->isEligible($attachmentId)) {
             wp_send_json_error([
                 'message' => __('Only JPEG and PNG attachments are supported.', 'slimify'),
             ], 422);
         }
 
         $result = $this->offloadAdapter->restoreAttachment($attachmentId);
-        if (! $result['ok']) {
+        if (!$result['ok']) {
             wp_send_json_error([
                 'message' => $result['message'],
                 'html' => $this->statusHtml($attachmentId),
@@ -288,7 +289,7 @@ final class MediaLibrary
     {
         AjaxAuth::requireManageOptions('slimify_compress_attachment');
 
-        $raw = isset($_POST['attachment_ids']) ? wp_unslash((string) $_POST['attachment_ids']) : '';
+        $raw = $this->postText('attachment_ids');
         $ids = array_values(array_unique(array_filter(array_map('absint', explode(',', $raw)))));
         $ids = array_slice($ids, 0, 50);
 
@@ -297,12 +298,12 @@ final class MediaLibrary
             if (
                 $id <= 0
                 || get_post_type($id) !== 'attachment'
-                || ! AjaxAuth::canManageAttachment($id)
-                || ! $this->isEligible($id)
+                || !AjaxAuth::canManageAttachment($id)
+                || !$this->isEligible($id)
             ) {
                 continue;
             }
-            $items[(string) $id] = [
+            $items[(string)$id] = [
                 'html' => $this->statusHtml($id),
                 'processing' => $this->isProcessing($id),
                 'processed' => $this->isProcessed($id),
@@ -326,10 +327,35 @@ final class MediaLibrary
         ]);
     }
 
+
+    /** Read an absint from POST after AjaxAuth nonce verification. */
+    private function postAbsint(string $key): int
+    {
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- callers use AjaxAuth::requireManageOptions().
+        if (!isset($_POST[$key])) {
+            return 0;
+        }
+
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- callers use AjaxAuth::requireManageOptions().
+        return absint(wp_unslash($_POST[$key]));
+    }
+
+    /** Read a sanitized string from POST after AjaxAuth nonce verification. */
+    private function postText(string $key): string
+    {
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- callers use AjaxAuth::requireManageOptions().
+        if (!isset($_POST[$key])) {
+            return '';
+        }
+
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- callers use AjaxAuth::requireManageOptions().
+        return sanitize_text_field(wp_unslash((string)$_POST[$key]));
+    }
+
     /** HTML status for one attachment. */
     private function statusHtml(int $attachmentId): string
     {
-        if (! $this->isEligible($attachmentId)) {
+        if (!$this->isEligible($attachmentId)) {
             return sprintf(
                 '<span class="slimify-status" data-attachment-id="%d">%s</span>',
                 $attachmentId,
@@ -341,11 +367,11 @@ final class MediaLibrary
         $meta = get_post_meta($attachmentId);
         $stats = $this->metaFirst($meta, CompressionService::META_STATS);
         $stats = is_array($stats) ? $stats : [];
-        $statsStatus = (string) ($stats['status'] ?? '');
+        $statsStatus = (string)($stats['status'] ?? '');
         $webpMap = $this->metaFirst($meta, CompressionService::META_WEBP);
         $originals = $this->metaFirst($meta, CompressionService::META_ORIGINALS);
         $originalCount = is_array($originals) ? count($originals) : 0;
-        $restoredAt = (int) ($this->metaFirst($meta, CompressionService::META_RESTORED) ?? 0);
+        $restoredAt = (int)($this->metaFirst($meta, CompressionService::META_RESTORED) ?? 0);
         $webpCount = is_array($webpMap) ? count($webpMap) : 0;
 
         $flag = $this->metaFirst($meta, CompressionService::META_FLAG);
@@ -353,11 +379,11 @@ final class MediaLibrary
         $hasBackup = $originalCount > 0;
         // Finished with backup = hard lock.
         $processed = $flagged && $statsStatus !== 'ineligible' && $hasBackup;
-        $softProcessed = $flagged && $statsStatus !== 'ineligible' && ! $hasBackup && $statsStatus !== 'unavailable';
-        $processing = ! $flagged && (
-            $statsStatus === 'partial'
-            || $this->hasLiveProcessingMarker($this->metaFirst($meta, CompressionService::META_PROCESSING))
-        );
+        $softProcessed = $flagged && $statsStatus !== 'ineligible' && !$hasBackup && $statsStatus !== 'unavailable';
+        $processing = !$flagged && (
+                $statsStatus === 'partial'
+                || $this->hasLiveProcessingMarker($this->metaFirst($meta, CompressionService::META_PROCESSING))
+            );
         $lines = [];
 
         if ($flagged && $statsStatus === 'unavailable') {
@@ -388,42 +414,44 @@ final class MediaLibrary
                 $lines[] = '<strong style="color:#b32d2e;">' . esc_html__('Not compressed', 'slimify') . '</strong>';
             }
             if ($restoredAt > 0) {
-                $lines[] = esc_html(sprintf(
+                $lines[] = esc_html(
+                    sprintf(
                     /* translators: %s: restore date */
-                    __('Original restored %s', 'slimify'),
-                    wp_date(
-                        get_option('date_format') . ' ' . get_option('time_format'),
-                        $restoredAt
+                        __('Original restored %s', 'slimify'),
+                        wp_date(
+                            get_option('date_format') . ' ' . get_option('time_format'),
+                            $restoredAt
+                        )
                     )
-                ));
+                );
             }
         }
 
-        if (! $processing && is_array($stats) && $stats !== []) {
-            $before = isset($stats['bytes_before']) ? (int) $stats['bytes_before'] : 0;
-            $saved = isset($stats['bytes_saved']) ? (int) $stats['bytes_saved'] : 0;
+        if (!$processing && is_array($stats) && $stats !== []) {
+            $before = isset($stats['bytes_before']) ? (int)$stats['bytes_before'] : 0;
+            $saved = isset($stats['bytes_saved']) ? (int)$stats['bytes_saved'] : 0;
             if ($before > 0 && $saved > 0) {
                 $percent = min(100, round(($saved / $before) * 100, 1));
                 $lines[] = sprintf(
-                    /* translators: 1: saved file size, 2: percentage */
+                /* translators: 1: saved file size, 2: percentage */
                     esc_html__('Saved %1$s (%2$s%%)', 'slimify'),
                     esc_html(size_format($saved, 1)),
-                    esc_html((string) $percent)
+                    esc_html((string)$percent)
                 );
             } elseif ($processed || $softProcessed) {
                 $lines[] = esc_html__('Original retained (no smaller output)', 'slimify');
             }
 
-            if (! empty($stats['drivers']) && is_array($stats['drivers'])) {
+            if (!empty($stats['drivers']) && is_array($stats['drivers'])) {
                 $drivers = array_map('sanitize_text_field', $stats['drivers']);
                 $lines[] = esc_html(implode(', ', $drivers));
             }
 
-            if (! empty($stats['processed_at'])) {
+            if (!empty($stats['processed_at'])) {
                 $lines[] = esc_html(
                     wp_date(
                         get_option('date_format') . ' ' . get_option('time_format'),
-                        (int) $stats['processed_at']
+                        (int)$stats['processed_at']
                     )
                 );
             }
@@ -431,13 +459,15 @@ final class MediaLibrary
             $lines[] = esc_html__('Previous result — detailed statistics unavailable.', 'slimify');
         }
 
-        if (! $processing) {
+        if (!$processing) {
             $lines[] = $webpCount > 0
-                ? esc_html(sprintf(
+                ? esc_html(
+                    sprintf(
                     /* translators: %d: number of WebP files */
-                    _n('%d WebP generated', '%d WebP files generated', $webpCount, 'slimify'),
-                    $webpCount
-                ))
+                        _n('%d WebP generated', '%d WebP files generated', $webpCount, 'slimify'),
+                        $webpCount
+                    )
+                )
                 : esc_html__('No WebP generated', 'slimify');
 
             if ($originalCount > 0) {
@@ -455,7 +485,7 @@ final class MediaLibrary
                 );
             } elseif ($flagged && $statsStatus === 'unavailable') {
                 // Unavailable finish; retry only if repairable.
-                $reason = is_array($stats) ? (string) ($stats['reason'] ?? '') : '';
+                $reason = is_array($stats) ? (string)($stats['reason'] ?? '') : '';
                 if ($reason === 'backup_root_unavailable') {
                     $lines[] = sprintf(
                         '<a href="#" class="button button-small slimify-compress-one" data-attachment-id="%d">%s</a>',
@@ -463,7 +493,7 @@ final class MediaLibrary
                         esc_html__('Retry compress', 'slimify')
                     );
                 }
-            } elseif (! $processed || $softProcessed || $statsStatus === 'ineligible') {
+            } elseif (!$processed || $softProcessed || $statsStatus === 'ineligible') {
                 $lines[] = sprintf(
                     '<a href="#" class="button button-small slimify-compress-one" data-attachment-id="%d">%s</a>',
                     $attachmentId,
@@ -471,9 +501,9 @@ final class MediaLibrary
                 );
                 if ($softProcessed) {
                     $lines[] = '<em>' . esc_html__(
-                        'No original backup — you can compress again without restore.',
-                        'slimify'
-                    ) . '</em>';
+                            'No original backup — you can compress again without restore.',
+                            'slimify'
+                        ) . '</em>';
                 }
             } elseif ($originalCount > 0) {
                 $lines[] = sprintf(
@@ -495,7 +525,7 @@ final class MediaLibrary
     /** True if the attachment is a supported image. */
     private function isEligible(int $attachmentId): bool
     {
-        return Limits::isSupportedMime((string) get_post_mime_type($attachmentId));
+        return Limits::isSupportedMime((string)get_post_mime_type($attachmentId));
     }
 
     /** True if restore is required before compressing again. */
@@ -507,13 +537,13 @@ final class MediaLibrary
     /** True if the compress run finished. */
     private function isRunFinished(int $attachmentId): bool
     {
-        if (! $this->compressionService->isFlagged($attachmentId)) {
+        if (!$this->compressionService->isFlagged($attachmentId)) {
             return false;
         }
 
         $stats = get_post_meta($attachmentId, CompressionService::META_STATS, true);
 
-        return ! is_array($stats) || ($stats['status'] ?? '') !== 'partial';
+        return !is_array($stats) || ($stats['status'] ?? '') !== 'partial';
     }
 
     /** True if compress work is still open. */
@@ -546,7 +576,7 @@ final class MediaLibrary
     /** First value from a get_post_meta map. */
     private function metaFirst(array $meta, string $key): mixed
     {
-        if (! isset($meta[$key][0])) {
+        if (!isset($meta[$key][0])) {
             return null;
         }
 
@@ -562,7 +592,7 @@ final class MediaLibrary
             return false;
         }
 
-        $started = is_numeric($raw) ? (int) $raw : 0;
+        $started = is_numeric($raw) ? (int)$raw : 0;
 
         return $started <= 0 || (time() - $started) <= 600;
     }

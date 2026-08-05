@@ -19,7 +19,7 @@ final class PathGuard
     public function isAllowed(string $filePath): bool
     {
         $real = realpath($filePath);
-        if ($real === false || ! is_file($real)) {
+        if ($real === false || !is_file($real)) {
             return false;
         }
 
@@ -35,7 +35,7 @@ final class PathGuard
     /** Throw if the path is outside allowed roots. */
     public function assertAllowed(string $filePath): void
     {
-        if (! $this->isAllowed($filePath)) {
+        if (!$this->isAllowed($filePath)) {
             throw new InvalidArgumentException('File path is outside the allowed directories.');
         }
     }
@@ -51,7 +51,7 @@ final class PathGuard
         $roots = [];
 
         $uploads = wp_upload_dir();
-        $basedir = isset($uploads['basedir']) ? (string) $uploads['basedir'] : '';
+        $basedir = isset($uploads['basedir']) ? (string)$uploads['basedir'] : '';
         if ($basedir !== '') {
             $uploadReal = realpath($basedir);
             if ($uploadReal !== false) {
@@ -79,7 +79,7 @@ final class PathGuard
 
         $roots = [];
         foreach ($candidates as $candidate) {
-            if (! is_string($candidate) || $candidate === '') {
+            if (!is_string($candidate) || $candidate === '') {
                 continue;
             }
 

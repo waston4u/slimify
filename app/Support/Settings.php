@@ -18,17 +18,17 @@ final class Settings
         }
 
         $stored = get_option(self::OPTION_KEY, []);
-        if (! is_array($stored)) {
+        if (!is_array($stored)) {
             $stored = [];
         }
 
         $this->cache = [
-            'use_binaries' => ! array_key_exists('use_binaries', $stored) || $stored['use_binaries'],
+            'use_binaries' => !array_key_exists('use_binaries', $stored) || $stored['use_binaries'],
             'jpeg_quality' => $this->clampQuality(
-                isset($stored['jpeg_quality']) ? (int) $stored['jpeg_quality'] : 80
+                isset($stored['jpeg_quality']) ? (int)$stored['jpeg_quality'] : 80
             ),
-            'generate_webp' => ! array_key_exists('generate_webp', $stored) || $stored['generate_webp'],
-            'keep_originals' => ! array_key_exists('keep_originals', $stored) || $stored['keep_originals'],
+            'generate_webp' => !array_key_exists('generate_webp', $stored) || $stored['generate_webp'],
+            'keep_originals' => !array_key_exists('keep_originals', $stored) || $stored['keep_originals'],
         ];
 
         return $this->cache;
@@ -62,17 +62,17 @@ final class Settings
     public function sanitize(array $input): array
     {
         $clean = [
-            'use_binaries' => ! empty($input['use_binaries']),
+            'use_binaries' => !empty($input['use_binaries']),
             'jpeg_quality' => $this->clampQuality(
-                isset($input['jpeg_quality']) ? (int) $input['jpeg_quality'] : 80
+                isset($input['jpeg_quality']) ? (int)$input['jpeg_quality'] : 80
             ),
-            'generate_webp' => ! empty($input['generate_webp']),
-            'keep_originals' => ! empty($input['keep_originals']),
+            'generate_webp' => !empty($input['generate_webp']),
+            'keep_originals' => !empty($input['keep_originals']),
         ];
 
         $this->cache = $clean;
 
-        if (! $clean['generate_webp'] && function_exists('delete_option')) {
+        if (!$clean['generate_webp'] && function_exists('delete_option')) {
             delete_option('slimify_has_webp');
         }
 
