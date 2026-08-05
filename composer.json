@@ -1,0 +1,15 @@
+{
+    "name": "ultimate/slimify",
+    "description": "Custom Media Compressor — zero-bloat local image compression (pngquant + MozJPEG).",
+    "version": "1.0.0",
+    "type": "wordpress-plugin",
+    "license": "GPL-3.0-or-later",
+    "require": {
+        "php": "^8.4"
+    },
+    "autoload": {
+        "psr-4": {
+            "Slimify\\": "app/"
+        }
+    }
+}

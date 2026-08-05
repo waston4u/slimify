@@ -1,0 +1,20 @@
+/* Depends on slimify-admin-common (tokens). */
+.slimify-progress-label {
+	margin: 4px 0 6px;
+	color: var(--sf-warn);
+	font-weight: 600;
+	font-size: 12px;
+	line-height: 1.4;
+}
+
+.slimify-progress-label.is-done {
+	color: var(--sf-ok);
+}
+
+.slimify-progress-label.is-waiting {
+	color: var(--sf-muted);
+}
+
+.media-item .slimify-progress-label {
+	clear: both;
+}

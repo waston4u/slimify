@@ -1,0 +1,5 @@
+# Local Composer install (optional — plugin ships with spl_autoload fallback).
+/vendor/
+
+.DS_Store
+Thumbs.db

@@ -1,0 +1,46 @@
+/**
+ * Shared Slimify admin design tokens / utilities.
+ * Screen CSS depends on handle `slimify-admin-common`.
+ */
+:root {
+	--sf-text: #1d2327;
+	--sf-muted: #646970;
+	--sf-border: #dcdcde;
+	--sf-border-strong: #c3c4c7;
+	--sf-surface: #fff;
+	--sf-soft: #f6f7f7;
+	--sf-accent: var(--wp-admin-theme-color, #2271b1);
+	--sf-ok: #1e6f3e;
+	--sf-warn: #8a6d00;
+	--sf-bad: #b32d2e;
+}
+
+.slimify-tag {
+	display: inline-block;
+	padding: 1px 7px;
+	border: 1px solid var(--sf-border-strong);
+	border-radius: 999px;
+	background: var(--sf-soft);
+	color: var(--sf-text);
+	font-size: 11px;
+	font-weight: 600;
+	line-height: 1.6;
+}
+
+.slimify-tag--ok {
+	color: var(--sf-ok);
+	border-color: #b8d8c2;
+	background: #f3faf5;
+}
+
+.slimify-tag--warn {
+	color: var(--sf-warn);
+	border-color: #e6dca8;
+	background: #fbf8eb;
+}
+
+.slimify-tag--bad {
+	color: var(--sf-bad);
+	border-color: #e2b4b4;
+	background: #fbf2f2;
+}
