@@ -2,8 +2,11 @@ name: Deploy Slimify to WordPress.org
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
+
+permissions:
+  contents: write
 
 jobs:
   deploy:
@@ -11,11 +14,46 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout main
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read plugin version
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(grep -i '^Version:' slimify.php | head -1 | sed 's/.*Version:[[:space:]]*//')
+          VERSION=$(echo "$VERSION" | tr -d '\r' | xargs)
+
+          if [ -z "$VERSION" ]; then
+            echo "Could not determine plugin version from slimify.php"
+            exit 1
+          fi
+
+          echo "Plugin version: $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Create Git tag
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          TAG="v${VERSION}"
+
+          if git ls-remote --tags origin "refs/tags/${TAG}" | grep -q "${TAG}"; then
+            echo "Tag ${TAG} already exists."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+            git tag -a "${TAG}" -m "Release ${VERSION}"
+            git push origin "${TAG}"
+          fi
 
       - name: Deploy to WordPress.org
         uses: 10up/action-wordpress-plugin-deploy@stable
         env:
           SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
           SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
+          SLUG: slimify
+          VERSION: v${{ steps.version.outputs.version }}
