@@ -23,11 +23,11 @@ jobs:
         id: version
         shell: bash
         run: |
-          VERSION=$(grep -i '^Version:' slimify.php | head -1 | sed 's/.*Version:[[:space:]]*//')
+          VERSION=$(grep -iE '^[[:space:]]*\*?[[:space:]]*Version[[:space:]]*:' slimify.php | head -1 | sed -E 's/.*Version[[:space:]]*:[[:space:]]*//')
           VERSION=$(echo "$VERSION" | tr -d '\r' | xargs)
 
           if [ -z "$VERSION" ]; then
-            echo "Could not determine plugin version from slimify.php"
+            echo "ERROR: Could not determine plugin version from slimify.php"
             exit 1
           fi
 
@@ -37,10 +37,13 @@ jobs:
       - name: Create Git tag
         env:
           VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
         run: |
           TAG="v${VERSION}"
 
-          if git ls-remote --tags origin "refs/tags/${TAG}" | grep -q "${TAG}"; then
+          echo "Release tag: ${TAG}"
+
+          if git ls-remote --tags origin "refs/tags/${TAG}" | grep -q "refs/tags/${TAG}"; then
             echo "Tag ${TAG} already exists."
           else
             git config user.name "github-actions[bot]"
