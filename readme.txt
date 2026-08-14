@@ -25,6 +25,10 @@ Slimify compresses JPEG and PNG uploads on your server using pngquant, MozJPEG, 
 2. Activate the plugin through the Plugins screen
 3. Open Settings → Media Compressor to configure quality and WebP
 
+== Screenshots ==
+
+1. Settings → Media Compressor: library progress, JPEG quality, WebP siblings, and local binaries.
+
 == Frequently Asked Questions ==
 
 = Does Slimify send images to a third party? =
