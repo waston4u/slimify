@@ -41,10 +41,10 @@ jobs:
         run: |
           TAG="v${VERSION}"
 
-          echo "Release tag: ${TAG}"
+          echo "Git release tag: ${TAG}"
 
           if git ls-remote --tags origin "refs/tags/${TAG}" | grep -q "refs/tags/${TAG}"; then
-            echo "Tag ${TAG} already exists."
+            echo "Git tag ${TAG} already exists."
           else
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -59,4 +59,4 @@ jobs:
           SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
           SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
           SLUG: slimify
-          VERSION: v${{ steps.version.outputs.version }}
+          VERSION: ${{ steps.version.outputs.version }}
