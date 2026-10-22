@@ -139,10 +139,7 @@ final class Limits
 
     /**
      * True if the file can produce a WebP sibling.
-     *
-     * The MIN_FILE_BYTES floor only applies to compression: below it a
-     * lossy/lossless pass is pointless, but a WebP sibling is still
-     * worthwhile so delivery can serve WebP consistently.
+     * The minimum size floor applies to compression only, not WebP.
      */
     public static function isFileWebpEligible(string $filePath): bool
     {

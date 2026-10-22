@@ -51,26 +51,33 @@ It lists media library entries whose original is neither on the server nor fetch
 == Changelog ==
 
 = 1.0.1 =
-* Fix: valid images below the 2KB compression floor were reported "Over limits" and skipped WebP generation — compression and WebP eligibility are now separate checks
-* Fix: attachments marked "Over limits" could never recover — the processed-keys ledger no longer records skipped files, and an ineligible result clears it
-* Fix: offload file-path hooks are now collected on `init` so theme/mu-plugin code can register them (they previously ran at plugins_loaded, before theme functions.php loads)
-* Fix: WebP URLs could be served for objects not on the CDN — delivery now requires offload confirmation and falls back to a local WebP URL, so an unpushed remote .webp never 404s
-* Fix: offloaders' attachment-URL filters (priority 99+) could clobber the WebP swap — Slimify's delivery filters now run last
-* Improvement: WebP siblings passed to offload manifests carry named keys (`size.webp`) instead of numeric ones
-* Feature: universal remote push — after compress/restore, a metadata-update nudge asks the active offload plugin (any plugin that hooks `wp_update_attachment_metadata`) to re-upload, then each WebP's remote URL is HEAD-verified before it is served from the CDN
-* Feature: Missing files admin — attachments with no local or remote source are marked ignored and listed under Media Compressor → Missing files instead of stalling bulk runs
-* Fix: the Missing files scan no longer flags offloaded attachments whose local copy was removed — deleting them would also have removed the files from remote storage
-* Security: Missing files delete only accepts attachments flagged as missing and re-checks the file is still gone right before deleting
-* Security: remote WebP verification uses safe HTTP requests with redirects disabled
-* Performance: remote WebP verification only runs for offloaded attachments (no more HEAD requests to the site itself or re-verify cron events on sites without an offloader), with a 3 s timeout, a 12-file cap, and a 10 s budget per attachment
-* Fix: "pushed to remote" is no longer reported when the offloader could not be confirmed; the warning clears once a later re-verify confirms the WebPs
+* Fix: auto-offload failed when a theme registers a numeric size name (e.g. add_image_size('680', …)) — WordPress stores it under key 0 and reports it missing forever; Slimify treats it as present, uses a safe offload key, and keeps its srcset entry correct
+* Fix: images under 2 KB were marked "Over limits" and skipped WebP — compression and WebP eligibility are now separate
+* Fix: "Over limits" attachments could never recover — skipped files are no longer locked in the ledger
+* Fix: offload file-path hooks are collected on `init` so themes and mu-plugins can register them
+* Fix: WebP is only served from the CDN once confirmed there; otherwise a local WebP URL is used
+* Fix: delivery filters run last so offloaders cannot undo the WebP swap
+* Improvement: WebP siblings in offload manifests use named keys (`size.webp`)
+* Feature: after compress/restore, any offload plugin that hooks metadata updates is asked to re-upload; WebPs are HEAD-checked before CDN delivery
+* Feature: Missing files screen lists attachments with no local or remote source instead of stalling bulk runs
+* Fix: Missing files scan no longer flags offloaded items whose local copy was removed
+* Security: Missing files delete only accepts flagged attachments and re-checks before deleting
+* Security: remote WebP checks use safe HTTP requests with redirects disabled
+* Performance: remote WebP checks only run for offloaded attachments (3 s timeout, 12-file cap, 10 s budget)
+* Fix: "pushed to remote" is not reported until WebPs are confirmed
 * Fix: library stats no longer count an attachment as both compressed and missing
 * Fix: a successful compress clears the missing-file flag
-* Fix: a busy/queued compress no longer triggers a needless offloader re-upload
-* Fix: remote downloads whose real format differs from the attachment (e.g. a CDN serving WebP behind a .jpg URL) are rejected
-* Hardening: temporary source copies are written to the system temp directory instead of the public uploads folder
+* Fix: a busy compress no longer triggers a needless offload
+* Fix: remote downloads that swap format behind a .jpg/.png URL are rejected
+* Hardening: temporary copies go to the system temp directory, not public uploads
 * Fix: WebP delivery treats www and non-www hosts as the same site
-* Fix: uninstall now removes Slimify's scheduled cron events
+* Fix: uninstall removes Slimify cron events
+* Fix: WebP clients keep a responsive srcset (rebuilt when Core drops it for a .webp src)
+* Fix: host-less upload URLs under WP-CLI without --url are no longer treated as remotely fetchable
+* Fix: images offloaded after compression switch to CDN WebP once confirmed (offloader upload + hourly delivery re-check)
+* Fix: new uploads queue that re-check only after WebPs exist
+* Fix: the deferred queue waits for the upload request to finish before compressing
+* Fix: remote WebP checks with more than 12 files make progress on each run
 
 = 1.0.0 =
 * Initial release

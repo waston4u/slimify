@@ -6,6 +6,7 @@ namespace Slimify\Webp;
 
 use Throwable;
 use Slimify\Compression\CompressionService;
+use Slimify\Offload\OffloadAdapter;
 use Slimify\Support\BinaryProbe;
 use Slimify\Support\Limits;
 use Slimify\Support\PathGuard;
@@ -47,8 +48,7 @@ final class WebpService
     /** Register front-end WebP URL filters. */
     public function registerDeliveryFilters(): void
     {
-        // Run after offloaders' URL rewrites (AS3CF swaps to the bucket URL at
-        // priority 99) so the extension swap applies to the final URL.
+        // After offloaders (priority 99) so the swap applies to the final URL.
         add_filter('wp_get_attachment_url', [$this, 'filterAttachmentUrl'], 999, 2);
         add_filter('wp_get_attachment_image_src', [$this, 'filterImageSrc'], 999, 4);
         add_filter('wp_get_attachment_image_attributes', [$this, 'filterImageAttributes'], 999, 3);
@@ -164,7 +164,7 @@ final class WebpService
         }
 
         /**
-         * Full-page caches key on the raw Accept header, which fragments the cache badly
+         * Full-page caches that key on Accept fragment badly if this is true.
          * @param bool $send
          */
         if (!apply_filters('slimify_send_vary_accept', true)) {
@@ -526,10 +526,8 @@ final class WebpService
     }
 
     /**
-     * Rewrite <img> src/srcset attributes to WebP when appropriate.
-     *
-     * Runs after offloaders rebuild attributes (AS3CF regenerates src at
-     * priority 99), so swapped values aren't clobbered.
+     * Rewrite img src/srcset to WebP when appropriate.
+     * Runs after offloaders (priority 99) so their rebuild does not undo the swap.
      *
      * @param array<string, string>|mixed $attr
      * @return array<string, string>|mixed
@@ -557,9 +555,56 @@ final class WebpService
             }
         }
 
-        if (isset($attr['srcset']) && is_string($attr['srcset'])) {
+        if (isset($attr['srcset']) && is_string($attr['srcset']) && $attr['srcset'] !== '') {
             $attr['srcset'] = $this->srcsetUrlsToWebp($attachmentId, $attr['srcset']);
+        } else {
+            $attr = $this->restoreSrcset($attr, $attachmentId, $size);
         }
+
+        return $attr;
+    }
+
+    /**
+     * Rebuild srcset after Core drops it for a .webp src.
+     * filterSrcset then swaps each candidate to WebP.
+     *
+     * @param array<string, string> $attr
+     * @return array<string, string>
+     */
+    private function restoreSrcset(array $attr, int $attachmentId, mixed $size): array
+    {
+        $meta = wp_get_attachment_metadata($attachmentId);
+        if (!is_array($meta) || empty($meta['sizes'])) {
+            return $attr;
+        }
+
+        $image = self::withoutRewriting(static fn() => wp_get_attachment_image_src($attachmentId, $size));
+        if (!is_array($image) || empty($image[0]) || empty($image[1]) || empty($image[2])) {
+            return $attr;
+        }
+
+        $sizeArray = [(int)$image[1], (int)$image[2]];
+        $srcset = wp_calculate_image_srcset($sizeArray, (string)$image[0], $meta, $attachmentId);
+        if (!is_string($srcset) || $srcset === '') {
+            return $attr;
+        }
+
+        if (empty($attr['sizes'])) {
+            $sizes = wp_calculate_image_sizes($sizeArray, (string)$image[0], $meta, $attachmentId);
+            if (!is_string($sizes) || $sizes === '') {
+                return $attr;
+            }
+            if (
+                ($attr['loading'] ?? '') === 'lazy'
+                && function_exists('wp_sizes_attribute_includes_valid_auto')
+                && !wp_sizes_attribute_includes_valid_auto($sizes)
+            ) {
+                $sizes = 'auto, ' . $sizes;
+            }
+            $attr['sizes'] = $sizes;
+        }
+
+        $attr['srcset'] = $srcset;
 
         return $attr;
     }
@@ -747,13 +792,9 @@ final class WebpService
     }
 
     /**
-     * Resolve the WebP URL that can actually be served for an original URL:
-     *
-     * - Local URL → local sibling must exist on disk.
-     * - Remote URL + confirmed offloaded → remote .webp (CDN).
-     * - Remote URL + unconfirmed → local sibling URL from origin, if the file
-     *   exists. Universal fallback: works with any offloader, no plugin API —
-     *   and never serves a remote .webp that isn't really there.
+     * Choose a WebP URL that can actually be served:
+     * local file on disk, confirmed remote WebP, or local fallback.
+     * Never serves a remote WebP that has not been confirmed.
      */
     private function resolveServeUrl(int $attachmentId, string $originalUrl): ?string
     {
@@ -785,10 +826,13 @@ final class WebpService
             return $webpUrl;
         }
 
+        // Not yet confirmed on the CDN — queue a check and fall back to local.
+        OffloadAdapter::requestReverify($attachmentId);
+
         return $this->localWebpUrl($attachmentId, $basename);
     }
 
-    /** True when the URL points at this site's own uploads domain. */
+    /** True when the URL is on this site's uploads host. */
     private function isLocalMediaUrl(string $url): bool
     {
         $uploads = wp_upload_dir();
@@ -799,7 +843,7 @@ final class WebpService
             && Site::normaliseHost($urlHost) === Site::normaliseHost($baseHost);
     }
 
-    /** Local-file gate for WebP serving; drops the mapping when the file is gone. */
+    /** True if the local WebP exists; clears the map entry when it does not. */
     private function localWebpExists(int $attachmentId, string $basename): bool
     {
         $attached = get_attached_file($attachmentId, true);
@@ -818,7 +862,7 @@ final class WebpService
         return false;
     }
 
-    /** Remote gate: only serve WebPs confirmed pushed for this delivery host. */
+    /** True if this WebP is confirmed on the delivery host. */
     private function remoteWebpConfirmed(int $attachmentId, string $webpUrl, string $basename): bool
     {
         $remote = get_post_meta($attachmentId, CompressionService::META_WEBP_REMOTE, true);
@@ -836,9 +880,8 @@ final class WebpService
     }
 
     /**
-     * Origin URL for a local WebP sibling, or null when the file isn't there.
-     * Used as the universal fallback for offloaded attachments whose WebP
-     * hasn't been confirmed on the remote storage yet.
+     * Local WebP URL, or null if the file is missing.
+     * Fallback for offloaded images whose remote WebP is not yet confirmed.
      */
     private function localWebpUrl(int $attachmentId, string $basename): ?string
     {
@@ -849,7 +892,7 @@ final class WebpService
 
         $webpPath = dirname($attached) . DIRECTORY_SEPARATOR . $basename;
         if (!is_file($webpPath)) {
-            return null; // Remote file may still exist — meta is untouched.
+            return null; // Remote file may still exist — leave meta alone.
         }
 
         $uploads = wp_upload_dir();
@@ -860,8 +903,7 @@ final class WebpService
             return null;
         }
 
-        // baseurl can be host-relative or malformed (e.g. 'http:///app/uploads'
-        // in some CLI/docroot configs) — rebuild it from home_url's path.
+        // Rebuild a host-less or malformed baseurl from home_url.
         $baseHost = wp_parse_url($baseurl, PHP_URL_HOST);
         if (!is_string($baseHost) || $baseHost === '') {
             $basePath = preg_replace('#^[a-z][a-z0-9+.-]*://*#i', '', $baseurl);

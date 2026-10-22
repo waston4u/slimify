@@ -26,6 +26,8 @@ final class CompressionService
     public const string META_STATS = '_slimify_compression_stats';
     public const string META_WEBP = '_slimify_webp';
     public const string META_WEBP_REMOTE = '_slimify_webp_remote';
+    public const string META_WEBP_REMOTE_CHECKED = '_slimify_webp_remote_checked';
+    private const string UPLOAD_IN_FLIGHT_PREFIX = 'slimify_upload_';
     public const string META_ORIGINALS = '_slimify_original_backups';
     public const string META_RESTORED = '_slimify_restored_at';
     public const string META_PROCESSING = '_slimify_processing';
@@ -88,6 +90,30 @@ final class CompressionService
         }
 
         update_post_meta($attachmentId, self::META_PROCESSING, (string)time());
+    }
+
+    /**
+     * Mark an upload that is still generating sizes or offloading.
+     * The deferred queue must not touch these files until the request ends.
+     */
+    public function markUploadInFlight(int $attachmentId): void
+    {
+        static $inFlight = [];
+        if ($attachmentId <= 0 || isset($inFlight[$attachmentId])) {
+            return;
+        }
+
+        $inFlight[$attachmentId] = true;
+        set_transient(self::UPLOAD_IN_FLIGHT_PREFIX . $attachmentId, 1, 5 * MINUTE_IN_SECONDS);
+        add_action('shutdown', static function () use ($attachmentId): void {
+            delete_transient(self::UPLOAD_IN_FLIGHT_PREFIX . $attachmentId);
+        });
+    }
+
+    /** True while the upload request is still running. */
+    public function isUploadInFlight(int $attachmentId): bool
+    {
+        return $attachmentId > 0 && get_transient(self::UPLOAD_IN_FLIGHT_PREFIX . $attachmentId) !== false;
     }
 
     /** Clear the processing marker. */
@@ -202,6 +228,11 @@ final class CompressionService
                 continue;
             }
 
+            // Still generating sizes or offloading — leave for the next drain.
+            if ($this->isUploadInFlight($attachmentId)) {
+                break;
+            }
+
             if ($this->isFlagged($attachmentId) && !$this->isIncompleteFlag($attachmentId)) {
                 $this->clearProcessing($attachmentId);
                 $this->clearQueueAttempts($attachmentId);
@@ -277,7 +308,7 @@ final class CompressionService
         }
 
         if ($this->isFlagged($attachmentId)) {
-            // Full finish (including soft-ineligible / unavailable) — slot can leave the queue.
+            // Finished (including soft skip) — remove from the queue.
             $this->clearProcessing($attachmentId);
 
             return 'done';
@@ -329,9 +360,8 @@ final class CompressionService
 
         $skipCompression = false;
         if (!Limits::isFileWithinLimits($filePath)) {
-            // Below MIN_FILE_BYTES compressing is pointless, but a WebP
-            // sibling is still worth generating for consistent delivery.
-            // Anything outside WebP limits skips the file entirely.
+            // Too small to compress, but still eligible for WebP.
+            // Outside WebP limits: skip the file entirely.
             if (
                 !$generateWebp
                 || !$this->settings->generateWebp()
@@ -667,8 +697,7 @@ final class CompressionService
                     ++$stats['webp_files'];
                 }
 
-                // Only ledger keys that did work — a skipped file is cheap to
-                // re-evaluate, and pinning it would make ineligibility sticky.
+                // Do not record skipped files — they stay cheap to re-check.
                 if (!$outcome['skipped']) {
                     $processedKeys[$key] = true;
                 }
@@ -761,9 +790,8 @@ final class CompressionService
                     }
                     $this->lastOutcome = $hadWork ? 'done' : 'skipped';
                 } else {
-                    // Over limits: finish for bulk without a hard lock.
-                    // Don't persist processed_keys — nothing was attempted, and
-                    // eligibility can change (settings, rules, file replaced).
+                    // Over limits: finish for bulk without locking.
+                    // Do not store processed_keys — nothing was attempted.
                     $stats['status'] = 'ineligible';
                     $stats['reason'] = 'limits';
                     $stats['original_backups'] = 0;
@@ -781,8 +809,7 @@ final class CompressionService
                 }
                 LibraryStats::invalidate();
             } elseif ($attachmentId > 0) {
-                // No sources on disk: mark missing so the queue moves on
-                // and the row lands in Media Compressor → Missing files.
+                // No files on disk — mark missing and move the queue on.
                 $this->markIgnored($attachmentId, 'no_source_files');
             }
 

@@ -40,6 +40,7 @@ final readonly class Hooks
         }
 
         $this->compressionService->markProcessing($attachmentId);
+        $this->compressionService->markUploadInFlight($attachmentId);
     }
 
     /** Drain the deferred queue. */

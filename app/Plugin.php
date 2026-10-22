@@ -14,6 +14,7 @@ use Slimify\Compression\CompressionService;
 use Slimify\Compression\DriverResolver;
 use Slimify\Core\Hooks;
 use Slimify\Offload\OffloadAdapter;
+use Slimify\Offload\SizeKeyRepair;
 use Slimify\Support\BinaryProbe;
 use Slimify\Support\PathGuard;
 use Slimify\Support\Settings;
@@ -63,7 +64,8 @@ final class Plugin
         new Hooks($this->compressionService, $this->offloadAdapter)->register();
         $this->webpService->registerDeliveryFilters();
         $this->webpService->registerMaintenanceHooks();
-        // Defer to init so themes/mu-plugins can register slimify_offload_file_path_hooks.
+        new SizeKeyRepair()->register();
+        // Wait for init so themes and mu-plugins can register offload hooks.
         add_action('init', [$this->offloadAdapter, 'register']);
 
         $bulkCompression = new BulkCompression(
