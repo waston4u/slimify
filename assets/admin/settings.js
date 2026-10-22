@@ -12,6 +12,7 @@
 	const i18n = config.i18n || {};
 	const bulkNonce = config.bulkNonce || '';
 	const binaryNonce = config.binaryNonce || '';
+	const missingNonce = config.missingNonce || '';
 
 	const binaryButton = document.getElementById('slimify-test-binaries');
 	const binaryOutput = document.getElementById('slimify-binary-results');
@@ -23,15 +24,23 @@
 	const total = document.getElementById('slimify-total');
 	const compressed = document.getElementById('slimify-compressed');
 	const pending = document.getElementById('slimify-pending');
-	const pctEl = document.getElementById('slimify-pct');
+	const missing = document.getElementById('slimify-missing');
+	const missingTabCount = document.getElementById('slimify-missing-tab-count');
 	const progress = document.getElementById('slimify-progress');
 	const progressBar = document.getElementById('slimify-progress-bar');
 	const progressLabel = document.getElementById('slimify-progress-label');
 	const message = document.getElementById('slimify-bulk-message');
 	const quality = document.getElementById('slimify_jpeg_quality');
 	const qualityVal = document.getElementById('slimify_jpeg_quality_val');
+	const scanButton = document.getElementById('slimify-missing-scan');
+	const deleteSelectedButton = document.getElementById('slimify-missing-delete-selected');
+	const deleteAllButton = document.getElementById('slimify-missing-delete-all');
+	const missingMessage = document.getElementById('slimify-missing-message');
+	const missingRows = document.getElementById('slimify-missing-rows');
+	const selectAll = document.getElementById('slimify-missing-select-all');
 
 	let running = false;
+	let scanning = false;
 	let consecutiveErrors = 0;
 	let nextTimer = null;
 	let activeController = null;
@@ -46,14 +55,17 @@
 	const setRunningUi = (isRunning) => {
 		running = isRunning;
 		if (startButton) {
-			startButton.disabled = isRunning || Number(pending?.textContent) === 0;
+			startButton.disabled = isRunning || scanning || Number(pending?.textContent) === 0;
 		}
 		if (stopButton) {
 			stopButton.disabled = !isRunning;
 			stopButton.setAttribute('aria-disabled', isRunning ? 'false' : 'true');
 		}
 		if (refreshButton) {
-			refreshButton.disabled = isRunning;
+			refreshButton.disabled = isRunning || scanning;
+		}
+		if (scanButton) {
+			scanButton.disabled = isRunning || scanning;
 		}
 		if (runPill) {
 			runPill.hidden = !isRunning;
@@ -75,9 +87,6 @@
 		if (progressLabel) {
 			progressLabel.textContent = `${pct}%`;
 		}
-		if (pctEl) {
-			pctEl.textContent = `${pct}%`;
-		}
 	};
 
 	const updateStatus = (status) => {
@@ -93,7 +102,14 @@
 		if (pending) {
 			pending.textContent = String(status.pending);
 		}
-		setProgressUi(Number(status.compressed), Number(status.total));
+		if (missing) {
+			missing.textContent = String(status.missing ?? 0);
+		}
+		if (missingTabCount) {
+			missingTabCount.textContent = String(status.missing ?? 0);
+		}
+		const accounted = Number(status.compressed) + Number(status.missing ?? 0);
+		setProgressUi(accounted, Number(status.total));
 		if (startButton) {
 			startButton.disabled = running || Number(status.pending) === 0;
 		}
@@ -226,7 +242,7 @@
 
 	startButton?.addEventListener('click', (event) => {
 		event.preventDefault();
-		if (running || Number(pending?.textContent) === 0) {
+		if (running || scanning || Number(pending?.textContent) === 0) {
 			return;
 		}
 		consecutiveErrors = 0;
@@ -250,7 +266,7 @@
 
 	refreshButton?.addEventListener('click', async (event) => {
 		event.preventDefault();
-		if (running) {
+		if (running || scanning) {
 			return;
 		}
 		refreshButton.disabled = true;
@@ -341,5 +357,244 @@
 				binaryButton.disabled = false;
 			}
 		});
+	}
+
+	const missingPost = (action, fields = {}) =>
+		ajaxPost({
+			ajaxUrl,
+			action,
+			nonce: missingNonce,
+			fields,
+			failMessage: i18n.requestFailed || 'Request failed.',
+		});
+
+	const setTab = (name) => {
+		document.querySelectorAll('[data-slimify-tab]').forEach((tab) => {
+			tab.classList.toggle('nav-tab-active', tab.getAttribute('data-slimify-tab') === name);
+		});
+		document.querySelectorAll('[data-slimify-panel]').forEach((panel) => {
+			panel.hidden = panel.getAttribute('data-slimify-panel') !== name;
+		});
+		if (name === 'missing') {
+			window.location.hash = 'missing';
+			loadMissingList(1);
+		} else {
+			window.location.hash = 'library';
+		}
+	};
+
+	document.querySelectorAll('[data-slimify-tab]').forEach((tab) => {
+		tab.addEventListener('click', (event) => {
+			event.preventDefault();
+			setTab(tab.getAttribute('data-slimify-tab') || 'library');
+		});
+	});
+
+	const selectedMissingIds = () =>
+		Array.from(document.querySelectorAll('#slimify-missing-rows input[type="checkbox"]:checked'))
+			.map((el) => Number(el.value))
+			.filter((id) => id > 0);
+
+	const syncMissingButtons = () => {
+		const selected = selectedMissingIds().length;
+		const rows = document.querySelectorAll('#slimify-missing-rows tr[data-id]').length;
+		if (deleteSelectedButton) {
+			deleteSelectedButton.disabled = scanning || running || selected === 0;
+		}
+		if (deleteAllButton) {
+			deleteAllButton.disabled = scanning || running || rows === 0;
+		}
+	};
+
+	const renderMissingRows = (rows) => {
+		if (!missingRows) {
+			return;
+		}
+		if (!rows.length) {
+			missingRows.innerHTML = `<tr class="slimify-missing-empty"><td colspan="5">${escapeHtml(
+				i18n.noMissing || 'No missing files recorded. Scan the library or run Compress remaining.'
+			)}</td></tr>`;
+			if (selectAll) {
+				selectAll.checked = false;
+			}
+			syncMissingButtons();
+			return;
+		}
+
+		missingRows.innerHTML = rows
+			.map((row) => {
+				const title = row.title || i18n.untitled || '(no title)';
+				const path = row.path || '—';
+				const edit = row.edit || '#';
+				return `<tr data-id="${Number(row.id)}">
+					<th class="check-column"><input type="checkbox" value="${Number(row.id)}" /></th>
+					<td>${escapeHtml(title)}</td>
+					<td>${Number(row.id)}</td>
+					<td class="slimify-missing-path"><code>${escapeHtml(path)}</code></td>
+					<td><a href="${escapeHtml(edit)}">${escapeHtml(i18n.viewInMedia || 'View')}</a></td>
+				</tr>`;
+			})
+			.join('');
+		if (selectAll) {
+			selectAll.checked = false;
+		}
+		syncMissingButtons();
+	};
+
+	const loadMissingList = async (page = 1) => {
+		if (!missingRows) {
+			return;
+		}
+		try {
+			const data = await missingPost('slimify_missing_list', { page });
+			renderMissingRows(data.rows || []);
+			if (data.status) {
+				updateStatus(data.status);
+			}
+			if (missingMessage) {
+				const count = Number(data.total || 0);
+				missingMessage.textContent =
+					count === 0
+						? i18n.noMissing ||
+							'No missing files recorded. Scan the library or run Compress remaining.'
+						: sprintf(i18n.missingCount || '%d missing file(s) recorded.', count);
+			}
+		} catch (error) {
+			if (missingMessage) {
+				missingMessage.textContent = `${i18n.errorPrefix || 'Error:'} ${error.message}`;
+			}
+		}
+	};
+
+	const setScanningUi = (isScanning) => {
+		scanning = isScanning;
+		if (scanButton) {
+			scanButton.disabled = isScanning || running;
+		}
+		if (startButton) {
+			startButton.disabled = isScanning || running || Number(pending?.textContent) === 0;
+		}
+		if (refreshButton) {
+			refreshButton.disabled = isScanning || running;
+		}
+		syncMissingButtons();
+	};
+
+	scanButton?.addEventListener('click', async (event) => {
+		event.preventDefault();
+		if (running || scanning) {
+			return;
+		}
+		setScanningUi(true);
+		if (missingMessage) {
+			missingMessage.textContent = i18n.scanning || 'Scanning the library…';
+		}
+		let page = 1;
+		try {
+			while (true) {
+				const data = await missingPost('slimify_missing_scan', { page });
+				if (data.status) {
+					updateStatus(data.status);
+				}
+				page = Number(data.next_page || page + 1);
+				if (data.done) {
+					break;
+				}
+			}
+			if (missingMessage) {
+				missingMessage.textContent = i18n.scanDone || 'Scan finished.';
+			}
+			await loadMissingList(1);
+		} catch (error) {
+			if (missingMessage) {
+				missingMessage.textContent = `${i18n.errorPrefix || 'Error:'} ${error.message}`;
+			}
+		} finally {
+			setScanningUi(false);
+		}
+	});
+
+	selectAll?.addEventListener('change', () => {
+		document.querySelectorAll('#slimify-missing-rows input[type="checkbox"]').forEach((el) => {
+			el.checked = !!selectAll.checked;
+		});
+		syncMissingButtons();
+	});
+
+	missingRows?.addEventListener('change', () => {
+		syncMissingButtons();
+	});
+
+	const deleteIds = async (ids) => {
+		const data = await missingPost('slimify_missing_delete', { ids: ids.join(',') });
+		if (data.status) {
+			updateStatus(data.status);
+		}
+		return data;
+	};
+
+	deleteSelectedButton?.addEventListener('click', async (event) => {
+		event.preventDefault();
+		const ids = selectedMissingIds();
+		if (!ids.length) {
+			return;
+		}
+		if (!window.confirm(i18n.deleteConfirm || 'Permanently delete the selected attachments from the media library? The files are already missing from disk.')) {
+			return;
+		}
+		try {
+			const data = await deleteIds(ids);
+			if (missingMessage) {
+				missingMessage.textContent = sprintf(
+					i18n.deletedCount || 'Deleted %d attachment(s).',
+					(data.deleted || []).length
+				);
+			}
+			await loadMissingList(1);
+		} catch (error) {
+			if (missingMessage) {
+				missingMessage.textContent = `${i18n.errorPrefix || 'Error:'} ${error.message}`;
+			}
+		}
+	});
+
+	deleteAllButton?.addEventListener('click', async (event) => {
+		event.preventDefault();
+		if (!window.confirm(i18n.deleteAllConfirm || 'Permanently delete all missing-file attachments from the media library?')) {
+			return;
+		}
+		let totalDeleted = 0;
+		try {
+			while (true) {
+				const data = await missingPost('slimify_missing_delete', { ids: '' });
+				totalDeleted += (data.deleted || []).length;
+				if (data.status) {
+					updateStatus(data.status);
+				}
+				if (!Number(data.remaining)) {
+					break;
+				}
+				if (!(data.deleted || []).length) {
+					break;
+				}
+			}
+			if (missingMessage) {
+				missingMessage.textContent = sprintf(
+					i18n.deletedCount || 'Deleted %d attachment(s).',
+					totalDeleted
+				);
+			}
+			await loadMissingList(1);
+		} catch (error) {
+			if (missingMessage) {
+				missingMessage.textContent = `${i18n.errorPrefix || 'Error:'} ${error.message}`;
+			}
+		}
+	});
+
+	if (window.location.hash === '#missing') {
+		setTab('missing');
+	} else {
+		syncMissingButtons();
 	}
 })();

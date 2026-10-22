@@ -4,7 +4,7 @@ Tags: images, compression, optimise, webp, performance
 Requires at least: 6.4
 Tested up to: 7.0
 Requires PHP: 8.4
-Stable tag: 1.0.0
+Stable tag: 1.0.1
 License: GPLv3 or later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -40,6 +40,16 @@ No. Compression runs on your server with local binaries or Imagick.
 JPEG and PNG inputs. Optional WebP siblings can be generated when beneficial.
 
 == Changelog ==
+
+= 1.0.1 =
+* Fix: valid images below the 2KB compression floor were reported "Over limits" and skipped WebP generation — compression and WebP eligibility are now separate checks
+* Fix: attachments marked "Over limits" could never recover — the processed-keys ledger no longer records skipped files, and an ineligible result clears it
+* Fix: offload file-path hooks are now collected on `init` so theme/mu-plugin code can register them (they previously ran at plugins_loaded, before theme functions.php loads)
+* Fix: WebP URLs could be served for objects not on the CDN — delivery now requires offload confirmation and falls back to a local WebP URL, so an unpushed remote .webp never 404s
+* Fix: offloaders' attachment-URL filters (priority 99+) could clobber the WebP swap — Slimify's delivery filters now run last
+* Improvement: WebP siblings passed to offload manifests carry named keys (`size.webp`) instead of numeric ones
+* Feature: universal remote push — after compress/restore, a metadata-update nudge asks the active offload plugin (any plugin that hooks `wp_update_attachment_metadata`) to re-upload, then each WebP's remote URL is HEAD-verified before it is served from the CDN
+* Feature: Missing files admin — attachments with no local or remote source are marked ignored and listed under Media Compressor → Missing files instead of stalling bulk runs
 
 = 1.0.0 =
 * Initial release

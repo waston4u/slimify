@@ -28,7 +28,7 @@ final class LibraryStats
     /**
      * Return cached status or null.
      *
-     * @return array{total: int, compressed: int, pending: int}|null
+     * @return array{total: int, compressed: int, pending: int, missing: int}|null
      */
     public static function getCached(): ?array
     {
@@ -39,7 +39,7 @@ final class LibraryStats
         $stored = get_transient(self::key());
         if (
             !is_array($stored)
-            || !isset($stored['total'], $stored['compressed'], $stored['pending'])
+            || !isset($stored['total'], $stored['compressed'], $stored['pending'], $stored['missing'])
         ) {
             return null;
         }
@@ -48,11 +48,12 @@ final class LibraryStats
             'total' => (int)$stored['total'],
             'compressed' => (int)$stored['compressed'],
             'pending' => (int)$stored['pending'],
+            'missing' => (int)$stored['missing'],
         ];
     }
 
     /**
-     * @param array{total: int, compressed: int, pending: int} $status
+     * @param array{total: int, compressed: int, pending: int, missing: int} $status
      */
     public static function putCache(array $status): void
     {
@@ -64,6 +65,7 @@ final class LibraryStats
             'total' => (int)$status['total'],
             'compressed' => (int)$status['compressed'],
             'pending' => (int)$status['pending'],
+            'missing' => (int)$status['missing'],
         ], self::TTL);
     }
 }

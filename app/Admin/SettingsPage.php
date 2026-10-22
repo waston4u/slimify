@@ -45,6 +45,7 @@ final readonly class SettingsPage
             'ajaxUrl' => admin_url('admin-ajax.php'),
             'bulkNonce' => wp_create_nonce('slimify_bulk_compression'),
             'binaryNonce' => wp_create_nonce('slimify_test_binaries'),
+            'missingNonce' => wp_create_nonce('slimify_missing_files'),
             'i18n' => [
                 'requestFailed' => __('Request failed.', 'slimify'),
                 'imageProcessed' => __('Image processed.', 'slimify'),
@@ -62,6 +63,15 @@ final readonly class SettingsPage
                 'toolAvailable' => __('Available', 'slimify'),
                 'toolMissing' => __('Missing', 'slimify'),
                 'askHost' => __('Ask your host to install this tool.', 'slimify'),
+                'scanning' => __('Scanning the library…', 'slimify'),
+                'scanDone' => __('Scan finished.', 'slimify'),
+                'noMissing' => __('No missing files recorded. Scan the library or run Compress remaining.', 'slimify'),
+                'deleteConfirm' => __('Permanently delete the selected attachments from the media library? The files are already missing from disk.', 'slimify'),
+                'deleteAllConfirm' => __('Permanently delete all missing-file attachments from the media library?', 'slimify'),
+                'deletedCount' => __('Deleted %d attachment(s).', 'slimify'),
+                'untitled' => __('(no title)', 'slimify'),
+                'viewInMedia' => __('View', 'slimify'),
+                'missingCount' => __('%d missing file(s) recorded.', 'slimify'),
             ],
         ]);
     }
@@ -212,8 +222,9 @@ final readonly class SettingsPage
 
         $opts = $this->settings->all();
         $status = $this->bulkCompression->status();
+        $accounted = $status['compressed'] + $status['missing'];
         $pct = $status['total'] > 0
-            ? (int)round(($status['compressed'] / $status['total']) * 100)
+            ? (int)round(($accounted / $status['total']) * 100)
             : 100;
         $settingsKey = Settings::OPTION_KEY;
         ?>
@@ -232,6 +243,17 @@ final readonly class SettingsPage
 
             <div class="slimify-layout">
                 <div class="slimify-layout__main">
+                    <nav class="nav-tab-wrapper slimify-tabs" aria-label="<?php echo esc_attr__('Media Compressor sections', 'slimify'); ?>">
+                        <a href="#library" class="nav-tab nav-tab-active" id="slimify-tab-library" data-slimify-tab="library">
+                            <?php echo esc_html__('Library', 'slimify'); ?>
+                        </a>
+                        <a href="#missing" class="nav-tab" id="slimify-tab-missing" data-slimify-tab="missing">
+                            <?php echo esc_html__('Missing files', 'slimify'); ?>
+                            <span class="slimify-tab-count" id="slimify-missing-tab-count"><?php echo esc_html((string)$status['missing']); ?></span>
+                        </a>
+                    </nav>
+
+                    <div id="slimify-panel-library" data-slimify-panel="library">
                     <section class="slimify-panel" id="slimify-bulk" aria-labelledby="slimify-bulk-title">
                         <header class="slimify-panel__head slimify-panel__head--row">
                             <div>
@@ -258,8 +280,8 @@ final readonly class SettingsPage
                                 <span class="slimify-metric__label"><?php echo esc_html__('Left', 'slimify'); ?></span>
                             </div>
                             <div class="slimify-metric">
-                                <span class="slimify-metric__value" id="slimify-pct"><?php echo esc_html((string)$pct); ?>%</span>
-                                <span class="slimify-metric__label"><?php echo esc_html__('Complete', 'slimify'); ?></span>
+                                <span class="slimify-metric__value" id="slimify-missing"><?php echo esc_html((string)$status['missing']); ?></span>
+                                <span class="slimify-metric__label"><?php echo esc_html__('Missing', 'slimify'); ?></span>
                             </div>
                         </div>
 
@@ -271,7 +293,7 @@ final readonly class SettingsPage
                             <div class="slimify-track__bar" role="progressbar"
                                  aria-valuemin="0"
                                  aria-valuemax="<?php echo esc_attr((string)max(1, $status['total'])); ?>"
-                                 aria-valuenow="<?php echo esc_attr((string)$status['compressed']); ?>">
+                                 aria-valuenow="<?php echo esc_attr((string)$accounted); ?>">
                                 <div
                                     class="slimify-track__fill"
                                     id="slimify-progress-bar"
@@ -281,7 +303,7 @@ final readonly class SettingsPage
                             <progress
                                 id="slimify-progress"
                                 class="slimify-track__native"
-                                value="<?php echo esc_attr((string)$status['compressed']); ?>"
+                                value="<?php echo esc_attr((string)$accounted); ?>"
                                 max="<?php echo esc_attr((string)max(1, $status['total'])); ?>"
                                 hidden
                             ></progress>
@@ -401,6 +423,70 @@ final readonly class SettingsPage
                             </div>
                         </form>
                     </section>
+                    </div>
+
+                    <div id="slimify-panel-missing" data-slimify-panel="missing" hidden>
+                        <section class="slimify-panel" aria-labelledby="slimify-missing-title">
+                            <header class="slimify-panel__head">
+                                <h2 id="slimify-missing-title"><?php echo esc_html__('Missing files', 'slimify'); ?></h2>
+                                <p>
+                                    <?php echo esc_html__('These attachments are in the media library but the original is not on the server. Compression skips them until you restore the file or delete the entry.', 'slimify'); ?>
+                                </p>
+                            </header>
+
+                            <div class="slimify-toolbar">
+                                <button type="button" class="button" id="slimify-missing-scan">
+                                    <?php echo esc_html__('Scan library', 'slimify'); ?>
+                                </button>
+                                <button type="button" class="button" id="slimify-missing-delete-selected" disabled>
+                                    <?php echo esc_html__('Delete selected', 'slimify'); ?>
+                                </button>
+                                <button type="button" class="button" id="slimify-missing-delete-all" disabled>
+                                    <?php echo esc_html__('Delete all listed', 'slimify'); ?>
+                                </button>
+                            </div>
+                            <p class="slimify-live" id="slimify-missing-message" aria-live="polite">
+                                <?php
+                                if ($status['missing'] === 0) {
+                                    echo esc_html__('No missing files recorded. Scan the library or run Compress remaining.', 'slimify');
+                                } else {
+                                    echo esc_html(
+                                        sprintf(
+                                        /* translators: %d: missing attachment count */
+                                            _n(
+                                                '%d missing file recorded.',
+                                                '%d missing files recorded.',
+                                                $status['missing'],
+                                                'slimify'
+                                            ),
+                                            $status['missing']
+                                        )
+                                    );
+                                }
+                                ?>
+                            </p>
+                            <div class="slimify-missing-table-wrap">
+                                <table class="widefat striped slimify-missing-table" id="slimify-missing-table">
+                                    <thead>
+                                        <tr>
+                                            <td class="check-column">
+                                                <input type="checkbox" id="slimify-missing-select-all" />
+                                            </td>
+                                            <th scope="col"><?php echo esc_html__('Title', 'slimify'); ?></th>
+                                            <th scope="col"><?php echo esc_html__('ID', 'slimify'); ?></th>
+                                            <th scope="col"><?php echo esc_html__('Expected path', 'slimify'); ?></th>
+                                            <th scope="col"><?php echo esc_html__('Media', 'slimify'); ?></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="slimify-missing-rows">
+                                        <tr class="slimify-missing-empty">
+                                            <td colspan="5"><?php echo esc_html__('No missing files recorded. Scan the library or run Compress remaining.', 'slimify'); ?></td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </section>
+                    </div>
                 </div>
 
                 <aside class="slimify-layout__aside">

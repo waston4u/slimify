@@ -15,22 +15,36 @@ use Slimify\Support\RemoteUrlGuard;
 use Slimify\Webp\WebpService;
 
 
-final readonly class OffloadAdapter
+final class OffloadAdapter
 {
+    /**
+     * Attachment ids whose metadata was already saved this request — an
+     * offloader listening on wp_update_attachment_metadata has synced once.
+     *
+     * @var array<int, bool>
+     */
+    private static array $metaSynced = [];
+
     /** Constructor. */
     public function __construct(
-        private CompressionService $compressionService,
-        private PathGuard $pathGuard,
+        private readonly CompressionService $compressionService,
+        private readonly PathGuard $pathGuard,
     ) {
     }
 
     /** Register hooks. */
     public function register(): void
     {
-        // Host-supplied path list filter names.
-        $hooks = apply_filters('slimify_offload_file_path_hooks', []);
+        /**
+         * File-list filter names used by offload plugins when they build an
+         * upload manifest. Any offloader that offers such a hook can be added
+         * via `slimify_offload_file_path_hooks` — known conventions seeded.
+         */
+        $hooks = apply_filters('slimify_offload_file_path_hooks', [
+            'as3cf_attachment_file_paths', // WP Offload Media / AS3CF (free + Pro).
+        ]);
         if (!is_array($hooks)) {
-            return;
+            $hooks = [];
         }
 
         foreach ($hooks as $hook) {
@@ -39,6 +53,23 @@ final readonly class OffloadAdapter
             }
             add_filter($hook, [$this, 'mergeExtraFilePaths'], 10, 3);
         }
+
+        // Record metadata saves so the universal push doesn't re-trigger an
+        // upload the offloader already ran this request.
+        add_filter('wp_update_attachment_metadata', [$this, 'recordMetaSync'], PHP_INT_MAX, 2);
+
+        // Universal push: nearly every offloader re-uploads on
+        // wp_update_attachment_metadata — works with any offload plugin.
+        add_filter('slimify_remote_push_handlers', function (mixed $handlers): array {
+            $handlers = is_array($handlers) ? $handlers : [];
+            $handlers[] = [$this, 'pushViaMetadataUpdate'];
+
+            return $handlers;
+        }, 50);
+
+        // Async/queue-based offloaders upload on their own schedule — a later
+        // re-verify promotes confirmed WebPs once their sync lands.
+        add_action('slimify_reverify_remote', [$this, 'reverifyRemoteWebps']);
     }
 
     /**
@@ -78,26 +109,28 @@ final readonly class OffloadAdapter
             }
         }
 
-        foreach ($paths as $path) {
+        foreach ($paths as $key => $path) {
             if (!is_string($path) || $path === '') {
                 continue;
             }
             $webp = preg_replace('/\.(jpe?g|png)$/i', '.webp', $path);
             if (is_string($webp) && $webp !== $path && is_file($webp) && !in_array($webp, $paths, true)) {
-                $paths[] = $webp;
+                $webpKey = is_string($key) && $key !== '' ? $key . '.webp' : 'webp_' . count($paths);
+                $paths[$webpKey] = $webp;
             }
         }
 
         $attached = $this->registeredAttachedPath($attachmentId);
         $dir = $attached !== null ? dirname($attached) : '';
         if ($dir !== '') {
-            foreach ($map as $basename) {
+            foreach ($map as $sizeKey => $basename) {
                 if (!is_string($basename) || $basename === '' || str_contains($basename, '/') || str_contains($basename, '\\')) {
                     continue;
                 }
                 $webp = $dir . DIRECTORY_SEPARATOR . $basename;
                 if (is_file($webp) && !in_array($webp, $paths, true)) {
-                    $paths[] = $webp;
+                    $webpKey = is_string($sizeKey) && $sizeKey !== '' ? $sizeKey . '.webp' : 'webp_' . count($paths);
+                    $paths[$webpKey] = $webp;
                 }
             }
         }
@@ -162,7 +195,7 @@ final readonly class OffloadAdapter
         $fromRemote = false;
 
         // Prefer local files.
-        if ($this->hasReadableLocalFile($attachmentId)) {
+        if ($this->hasReadableLocalFile($attachmentId, $metadata)) {
             if ($dryRun) {
                 return [
                     'ok' => true,
@@ -179,43 +212,33 @@ final readonly class OffloadAdapter
                 ];
             }
         } else {
-            if (!$this->canFetchRemote($attachmentId)) {
-                if (!$dryRun) {
-                    $this->compressionService->markUnavailable($attachmentId, 'no_remote_source');
+            if ($this->canFetchRemote($attachmentId)) {
+                if ($dryRun) {
+                    return [
+                        'ok' => true,
+                        'message' => __(
+                            'Remote file detected; would fetch, compress, and push back via offload/CDN hooks.',
+                            'slimify'
+                        ),
+                        'files' => 1,
+                    ];
                 }
 
-                return [
-                    'ok' => false,
-                    'permanent' => true,
-                    'message' => __('Local file missing and no third-party/remote source is available.', 'slimify'),
-                    'files' => 0,
-                ];
-            }
+                if (!$this->materializeRemoteAttachment($attachmentId, $metadata)) {
+                    return [
+                        'ok' => false,
+                        'message' => __('Failed to fetch the remote original (offloader/URL).', 'slimify'),
+                        'files' => 0,
+                    ];
+                }
 
-            if ($dryRun) {
-                return [
-                    'ok' => true,
-                    'message' => __(
-                        'Remote file detected; would fetch, compress, and push back via offload/CDN hooks.',
-                        'slimify'
-                    ),
-                    'files' => 1,
-                ];
-            }
-
-            // Materialise remote then compress.
-            if (!$this->materializeRemoteAttachment($attachmentId, $metadata)) {
-                return [
-                    'ok' => false,
-                    'message' => __('Failed to fetch the remote original (offloader/URL).', 'slimify'),
-                    'files' => 0,
-                ];
-            }
-
-            $fromRemote = true;
-            $refreshed = wp_get_attachment_metadata($attachmentId);
-            if (is_array($refreshed)) {
-                $metadata = $refreshed;
+                $fromRemote = true;
+                $refreshed = wp_get_attachment_metadata($attachmentId);
+                if (is_array($refreshed)) {
+                    $metadata = $refreshed;
+                }
+            } else {
+                return $this->skipMissingLocal($attachmentId, $dryRun);
             }
         }
 
@@ -488,6 +511,10 @@ final readonly class OffloadAdapter
             return null;
         }
 
+        if ($this->isSameSiteMediaUrl($url)) {
+            return null;
+        }
+
         return $this->downloadUrlToJailTemp($url);
     }
 
@@ -550,6 +577,10 @@ final readonly class OffloadAdapter
         }
 
         if (is_bool($filtered)) {
+            // Ground truth: probe each WebP's remote URL regardless of what any
+            // handler claimed — works for every offload plugin.
+            $this->verifyRemoteWebps($attachmentId, $context);
+
             return $filtered;
         }
 
@@ -571,6 +602,152 @@ final readonly class OffloadAdapter
         return false;
     }
 
+    /** Record that an attachment's metadata was saved this request. */
+    public function recordMetaSync(mixed $metadata, mixed $postId): mixed
+    {
+        self::$metaSynced[(int)$postId] = true;
+
+        return $metadata;
+    }
+
+    /**
+     * Universal push: fire wp_update_attachment_metadata so any offload
+     * plugin that hooks it re-uploads the attachment's files (WebP siblings
+     * ride along through the offloader's own file-list filter).
+     *
+     * @param array<string, mixed> $context
+     */
+    public function pushViaMetadataUpdate(int $attachmentId, array $context): ?bool
+    {
+        if (!function_exists('wp_update_attachment_metadata') || !$this->hasExternalMetadataListeners()) {
+            return null;
+        }
+
+        // Already synced this request — the offloader uploaded on the
+        // pipeline's own metadata save; re-firing would double the upload.
+        if (!empty(self::$metaSynced[$attachmentId])) {
+            return true;
+        }
+
+        $metadata = isset($context['metadata']) && is_array($context['metadata'])
+            ? $context['metadata']
+            : wp_get_attachment_metadata($attachmentId);
+        if (!is_array($metadata) || $metadata === []) {
+            return null;
+        }
+
+        wp_update_attachment_metadata($attachmentId, $metadata);
+
+        return true;
+    }
+
+    /** True if something other than Slimify listens on wp_update_attachment_metadata. */
+    private function hasExternalMetadataListeners(): bool
+    {
+        global $wp_filter;
+
+        $hook = $wp_filter['wp_update_attachment_metadata'] ?? null;
+        if (!$hook instanceof \WP_Hook) {
+            return false;
+        }
+
+        foreach ($hook->callbacks as $callbacks) {
+            foreach ($callbacks as $callback) {
+                $function = $callback['function'] ?? null;
+
+                if (
+                    is_array($function)
+                    && is_object($function[0])
+                    && ($function[0] instanceof WebpService || $function[0] instanceof self)
+                ) {
+                    continue;
+                }
+
+                if (is_string($function) && str_starts_with($function, 'Slimify\\')) {
+                    continue;
+                }
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Verify each WebP sibling's remote URL actually exists, and record the
+     * confirmed set — the only check that works for every offload plugin.
+     *
+     * @param array<string, mixed> $context
+     */
+    private function verifyRemoteWebps(int $attachmentId, array $context, bool $reschedule = true): void
+    {
+        $url = is_string($context['url'] ?? null) ? $context['url'] : '';
+        $host = $url !== '' ? wp_parse_url($url, PHP_URL_HOST) : null;
+        $path = $url !== '' ? wp_parse_url($url, PHP_URL_PATH) : null;
+        $scheme = $url !== '' ? wp_parse_url($url, PHP_URL_SCHEME) : null;
+        if (!is_string($host) || $host === '' || !is_string($path) || !is_string($scheme)) {
+            return;
+        }
+
+        // SSRF guard: the base URL must resolve to a public address.
+        if (!RemoteUrlGuard::isSafe($scheme . '://' . $host . dirname($path) . '/')) {
+            return;
+        }
+
+        $map = get_post_meta($attachmentId, CompressionService::META_WEBP, true);
+        if (!is_array($map) || $map === []) {
+            return;
+        }
+
+        $dir = trailingslashit(dirname($path));
+        $confirmed = [];
+        $missing = 0;
+
+        foreach ($map as $basename) {
+            if (!is_string($basename) || $basename === '' || wp_basename($basename) !== $basename) {
+                continue;
+            }
+            $remote = $scheme . '://' . $host . $dir . $basename;
+            $response = wp_remote_head($remote, ['timeout' => 8, 'redirection' => 3]);
+            if (!is_wp_error($response) && (int)wp_remote_retrieve_response_code($response) === 200) {
+                $confirmed[] = $basename;
+            } else {
+                ++$missing;
+            }
+        }
+
+        if ($confirmed === []) {
+            delete_post_meta($attachmentId, CompressionService::META_WEBP_REMOTE);
+        } else {
+            update_post_meta($attachmentId, CompressionService::META_WEBP_REMOTE, [
+                'host'  => $host,
+                'files' => $confirmed,
+            ]);
+        }
+
+        // Queue-based offloaders may not have landed the files yet — one
+        // deferred re-verify promotes them when their sync completes.
+        if ($missing > 0 && $reschedule && function_exists('wp_schedule_single_event')) {
+            wp_schedule_single_event(time() + 10 * MINUTE_IN_SECONDS, 'slimify_reverify_remote', [$attachmentId]);
+        }
+    }
+
+    /**
+     * Cron re-check of remote WebP availability (scheduled by verifyRemoteWebps
+     * when an offloader's async sync may still be running). Does not re-arm —
+     * one deferred attempt per push, then the next natural push re-verifies.
+     */
+    public function reverifyRemoteWebps(int $attachmentId): void
+    {
+        $url = $this->sourceUrl($attachmentId, 'full') ?? '';
+        if ($url === '') {
+            return;
+        }
+
+        $this->verifyRemoteWebps($attachmentId, ['url' => $url], false);
+    }
+
     /** True if a remote source can be fetched. */
     private function canFetchRemote(int $attachmentId): bool
     {
@@ -579,7 +756,15 @@ final readonly class OffloadAdapter
             return $probe;
         }
 
-        if ($this->sourceUrl($attachmentId, 'full') !== null) {
+        $registered = $this->registeredAttachedPath($attachmentId);
+        $url = $this->sourceUrl($attachmentId, 'full');
+        $viaFilter = apply_filters('slimify_fetch_remote_file', null, $attachmentId, [
+            'size' => 'full',
+            'size_file' => null,
+            'url' => $url,
+            'attached' => $registered,
+        ]);
+        if (is_string($viaFilter) && $viaFilter !== '' && $this->isReadableSource($viaFilter)) {
             return true;
         }
 
@@ -588,19 +773,22 @@ final readonly class OffloadAdapter
             return true;
         }
 
-        $registered = $this->registeredAttachedPath($attachmentId);
         if (is_string($registered) && $registered !== '' && $this->isReadableSource($registered)) {
             return true;
         }
 
-        $viaFilter = apply_filters('slimify_fetch_remote_file', null, $attachmentId, [
+        $context = [
             'size' => 'full',
             'size_file' => null,
-            'url' => null,
+            'url' => $url,
             'attached' => $registered,
-        ]);
+        ];
+        $filteredUrl = apply_filters('slimify_remote_source_url', $url, $attachmentId, $context);
+        if (is_string($filteredUrl) && $filteredUrl !== '') {
+            $url = $filteredUrl;
+        }
 
-        return is_string($viaFilter) && $viaFilter !== '' && $this->isReadableSource($viaFilter);
+        return is_string($url) && $url !== '' && !$this->isSameSiteMediaUrl($url);
     }
 
     /** True if the attachment uses remote storage. */
@@ -618,22 +806,68 @@ final readonly class OffloadAdapter
         return $this->urlIsOffLocalUploads($attachmentId);
     }
 
-    /** True if a readable local file exists. */
-    private function hasReadableLocalFile(int $attachmentId): bool
+    /** True if a readable local or stream source exists. */
+    public function hasLocalSource(int $attachmentId): bool
     {
-        if ($this->hasRealDiskFile($attachmentId)) {
-            return true;
-        }
+        return $this->hasReadableLocalFile($attachmentId);
+    }
 
-        // Soft-local or stream sources.
-        $filtered = get_attached_file($attachmentId, false);
-        if (is_string($filtered) && $this->isReadableSource($filtered)) {
-            return true;
-        }
+    /** True if this row is a same-site library item with no file and no offload source. */
+    public function isMissingLocalGhost(int $attachmentId): bool
+    {
+        return !$this->hasReadableLocalFile($attachmentId) && !$this->canFetchRemote($attachmentId);
+    }
 
+    /** True if a readable local file exists. */
+    private function hasReadableLocalFile(int $attachmentId, ?array $metadata = null): bool
+    {
+        return $this->findLocalSourcePath($attachmentId, $metadata) !== null;
+    }
+
+    /** Local disk or stream path, or null. Miss-path fallbacks run only after is_file fails. */
+    private function findLocalSourcePath(int $attachmentId, ?array $metadata = null): ?string
+    {
         $registered = $this->registeredAttachedPath($attachmentId);
+        if (is_string($registered) && $registered !== '' && is_file($registered)) {
+            return $registered;
+        }
 
-        return is_string($registered) && $this->isReadableSource($registered);
+        $filtered = get_attached_file($attachmentId, false);
+        if (is_string($filtered) && $filtered !== '' && $this->isReadableSource($filtered)) {
+            return $filtered;
+        }
+
+        if (is_string($registered) && $registered !== '' && $this->isReadableSource($registered)) {
+            return $registered;
+        }
+
+        if (function_exists('wp_get_original_image_path')) {
+            $original = wp_get_original_image_path($attachmentId);
+            if (is_string($original) && $original !== '' && is_file($original)) {
+                return $original;
+            }
+        }
+
+        if ($metadata === null) {
+            $loaded = wp_get_attachment_metadata($attachmentId);
+            $metadata = is_array($loaded) ? $loaded : [];
+        }
+
+        if (!empty($metadata['file']) && is_string($metadata['file'])) {
+            $rel = str_replace('\\', '/', $metadata['file']);
+            if ($rel !== '' && !str_contains($rel, '..')) {
+                $uploads = wp_upload_dir();
+                $basedir = (string)($uploads['basedir'] ?? '');
+                if ($basedir !== '') {
+                    $candidate = $basedir . '/' . ltrim($rel, '/');
+                    if (is_file($candidate)) {
+                        return $candidate;
+                    }
+                }
+            }
+        }
+
+        return null;
     }
 
     /** True if a real disk file exists. */
@@ -723,10 +957,81 @@ final readonly class OffloadAdapter
             return false;
         }
 
-        $uploads = wp_upload_dir();
-        $baseurl = (string)($uploads['baseurl'] ?? '');
+        return !$this->isSameSiteMediaUrl($url);
+    }
 
-        return $baseurl === '' || !str_starts_with($url, $baseurl);
+    /** True if this URL is this site's uploads or content host+path. */
+    private function isSameSiteMediaUrl(string $url): bool
+    {
+        $parts = wp_parse_url($url);
+        if (!is_array($parts) || empty($parts['host'])) {
+            return false;
+        }
+
+        $host = $this->normaliseHost((string)$parts['host']);
+        $path = rawurldecode((string)($parts['path'] ?? ''));
+        if ($host === '' || $path === '') {
+            return false;
+        }
+
+        $bases = [];
+        $uploads = wp_upload_dir();
+        if (!empty($uploads['baseurl'])) {
+            $bases[] = (string)$uploads['baseurl'];
+        }
+        if (function_exists('content_url')) {
+            $bases[] = content_url();
+        }
+
+        foreach ($bases as $base) {
+            $baseParts = wp_parse_url($base);
+            if (!is_array($baseParts) || empty($baseParts['host'])) {
+                continue;
+            }
+
+            if ($this->normaliseHost((string)$baseParts['host']) !== $host) {
+                continue;
+            }
+
+            $basePath = rtrim(rawurldecode((string)($baseParts['path'] ?? '')), '/');
+            if ($basePath === '') {
+                continue;
+            }
+
+            if ($path === $basePath || str_starts_with($path, $basePath . '/')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** Lowercase host without a leading www. */
+    private function normaliseHost(string $host): string
+    {
+        $host = strtolower(trim($host, '[]'));
+        if (str_starts_with($host, 'www.')) {
+            return substr($host, 4);
+        }
+
+        return $host;
+    }
+
+    /** Skip a library row whose file is not on disk. */
+    private function skipMissingLocal(int $attachmentId, bool $dryRun): array
+    {
+        if (!$dryRun) {
+            $this->compressionService->markIgnored($attachmentId, 'missing_file');
+        }
+
+        return [
+            'ok' => true,
+            'ignored' => true,
+            'files' => 0,
+            'message' => $dryRun
+                ? __('Listed in the media library but the original is not on the server; would skip.', 'slimify')
+                : __('Listed in the media library but the original is not on the server. Skipped.', 'slimify'),
+        ];
     }
 
     /** True if the source is readable. */
@@ -767,7 +1072,7 @@ final readonly class OffloadAdapter
 
             $temp = dirname($real) . DIRECTORY_SEPARATOR . '.slimify-src-' . bin2hex(random_bytes(8)) . '-' . $basename;
             if (@copy($real, $temp) && is_file($temp)) {
-                if (!Limits::isFileWithinLimits($temp)) {
+                if (!Limits::isFileWebpEligible($temp)) {
                     wp_delete_file($temp);
 
                     return null;
@@ -776,7 +1081,7 @@ final readonly class OffloadAdapter
                 return ['path' => $temp, 'owned' => true];
             }
 
-            if (!Limits::isFileWithinLimits($real)) {
+            if (!Limits::isFileWebpEligible($real)) {
                 return null;
             }
 
@@ -788,7 +1093,7 @@ final readonly class OffloadAdapter
             return null;
         }
 
-        if (!$this->pathGuard->isAllowed($temp) || !Limits::isFileWithinLimits($temp)) {
+        if (!$this->pathGuard->isAllowed($temp) || !Limits::isFileWebpEligible($temp)) {
             wp_delete_file($temp);
 
             return null;
@@ -815,7 +1120,7 @@ final readonly class OffloadAdapter
             return null;
         }
 
-        if (!Limits::isFileWithinLimits($tmp)) {
+        if (!Limits::isFileWebpEligible($tmp)) {
             wp_delete_file($tmp);
 
             return null;

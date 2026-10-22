@@ -25,10 +25,12 @@ final class CompressionService
     public const string META_FLAG = '_slimify_compressed';
     public const string META_STATS = '_slimify_compression_stats';
     public const string META_WEBP = '_slimify_webp';
+    public const string META_WEBP_REMOTE = '_slimify_webp_remote';
     public const string META_ORIGINALS = '_slimify_original_backups';
     public const string META_RESTORED = '_slimify_restored_at';
     public const string META_PROCESSING = '_slimify_processing';
     public const string META_QUEUE_ATTEMPTS = '_slimify_queue_attempts';
+    public const string META_IGNORE = '_slimify_ignore';
     public const string OPTION_BACKUP_PATH = 'slimify_backup_path';
 
     private const int PROCESSING_STALE_SECONDS = 600;
@@ -325,10 +327,22 @@ final class CompressionService
         $result['bytes_before'] = $before !== false ? $before : 0;
         $result['bytes_after'] = $result['bytes_before'];
 
+        $skipCompression = false;
         if (!Limits::isFileWithinLimits($filePath)) {
-            $result['skipped'] = true;
+            // Below MIN_FILE_BYTES compressing is pointless, but a WebP
+            // sibling is still worth generating for consistent delivery.
+            // Anything outside WebP limits skips the file entirely.
+            if (
+                !$generateWebp
+                || !$this->settings->generateWebp()
+                || !Limits::isFileWebpEligible($filePath)
+            ) {
+                $result['skipped'] = true;
 
-            return $result;
+                return $result;
+            }
+
+            $skipCompression = true;
         }
 
         $mime = (string)(wp_check_filetype($filePath)['type'] ?? '');
@@ -362,15 +376,17 @@ final class CompressionService
         }
 
         try {
-            $driver = $this->resolver->resolve($mime);
-            if ($driver !== null) {
-                try {
-                    $result['compressed'] = $driver->compress($filePath);
-                    if ($result['compressed']) {
-                        $result['driver'] = $this->driverName($driver::class);
+            if (!$skipCompression) {
+                $driver = $this->resolver->resolve($mime);
+                if ($driver !== null) {
+                    try {
+                        $result['compressed'] = $driver->compress($filePath);
+                        if ($result['compressed']) {
+                            $result['driver'] = $this->driverName($driver::class);
+                        }
+                    } catch (Throwable) {
+                        $result['compressed'] = false;
                     }
-                } catch (Throwable) {
-                    $result['compressed'] = false;
                 }
             }
 
@@ -651,7 +667,11 @@ final class CompressionService
                     ++$stats['webp_files'];
                 }
 
-                $processedKeys[$key] = true;
+                // Only ledger keys that did work — a skipped file is cheap to
+                // re-evaluate, and pinning it would make ineligibility sticky.
+                if (!$outcome['skipped']) {
+                    $processedKeys[$key] = true;
+                }
 
                 if ($key !== 'full' && isset($metadata['sizes'][$key]) && is_array($metadata['sizes'][$key])) {
                     clearstatcache(true, $path);
@@ -724,7 +744,7 @@ final class CompressionService
                     if (!$hadWork) {
                         $stats['reason'] = 'no_gain';
                     }
-                    update_post_meta($attachmentId, self::META_FLAG, '1');
+                    $this->writeCompressedFlag($attachmentId);
                     update_post_meta($attachmentId, self::META_STATS, $stats);
                     delete_post_meta($attachmentId, self::META_RESTORED);
                     $this->clearProcessing($attachmentId);
@@ -737,14 +757,18 @@ final class CompressionService
                         update_post_meta($attachmentId, self::META_WEBP, $webpMap);
                     } else {
                         delete_post_meta($attachmentId, self::META_WEBP);
+                        delete_post_meta($attachmentId, self::META_WEBP_REMOTE);
                     }
                     $this->lastOutcome = $hadWork ? 'done' : 'skipped';
                 } else {
                     // Over limits: finish for bulk without a hard lock.
+                    // Don't persist processed_keys — nothing was attempted, and
+                    // eligibility can change (settings, rules, file replaced).
                     $stats['status'] = 'ineligible';
                     $stats['reason'] = 'limits';
                     $stats['original_backups'] = 0;
-                    update_post_meta($attachmentId, self::META_FLAG, '1');
+                    $stats['processed_keys'] = [];
+                    $this->writeCompressedFlag($attachmentId);
                     update_post_meta($attachmentId, self::META_STATS, $stats);
                     $this->clearProcessing($attachmentId);
                     if ($originals !== []) {
@@ -752,12 +776,14 @@ final class CompressionService
                         delete_post_meta($attachmentId, self::META_ORIGINALS);
                     }
                     delete_post_meta($attachmentId, self::META_WEBP);
+                    delete_post_meta($attachmentId, self::META_WEBP_REMOTE);
                     $this->lastOutcome = 'skipped';
                 }
                 LibraryStats::invalidate();
             } elseif ($attachmentId > 0) {
-                // No sources: finish so the queue moves on.
-                $this->markUnavailable($attachmentId, 'no_source_files');
+                // No sources on disk: mark missing so the queue moves on
+                // and the row lands in Media Compressor → Missing files.
+                $this->markIgnored($attachmentId, 'no_source_files');
             }
 
             return $metadata;
@@ -888,6 +914,7 @@ final class CompressionService
             delete_post_meta($attachmentId, self::META_FLAG);
             delete_post_meta($attachmentId, self::META_STATS);
             delete_post_meta($attachmentId, self::META_WEBP);
+            delete_post_meta($attachmentId, self::META_WEBP_REMOTE);
             update_post_meta($attachmentId, self::META_RESTORED, time());
             $this->clearProcessing($attachmentId);
             LibraryStats::invalidate();
@@ -1051,10 +1078,12 @@ final class CompressionService
         delete_post_meta($attachmentId, self::META_FLAG);
         delete_post_meta($attachmentId, self::META_STATS);
         delete_post_meta($attachmentId, self::META_WEBP);
+        delete_post_meta($attachmentId, self::META_WEBP_REMOTE);
         delete_post_meta($attachmentId, self::META_ORIGINALS);
         delete_post_meta($attachmentId, self::META_RESTORED);
         delete_post_meta($attachmentId, self::META_PROCESSING);
         delete_post_meta($attachmentId, self::META_QUEUE_ATTEMPTS);
+        delete_post_meta($attachmentId, self::META_IGNORE);
         LibraryStats::invalidate();
     }
 
@@ -1065,7 +1094,7 @@ final class CompressionService
             return;
         }
 
-        update_post_meta($attachmentId, self::META_FLAG, '1');
+        $this->writeCompressedFlag($attachmentId);
         update_post_meta($attachmentId, self::META_STATS, [
             'version' => 1,
             'processed_at' => time(),
@@ -1076,6 +1105,49 @@ final class CompressionService
         $this->clearProcessing($attachmentId);
         $this->lastOutcome = 'skipped';
         LibraryStats::invalidate();
+    }
+
+    /** Skip compression: listed in the library but no file on disk. */
+    public function markIgnored(int $attachmentId, string $reason = 'missing_file'): void
+    {
+        if ($attachmentId <= 0) {
+            return;
+        }
+
+        update_post_meta($attachmentId, self::META_IGNORE, $reason);
+        $this->clearProcessing($attachmentId);
+        $this->lastOutcome = 'skipped';
+        LibraryStats::invalidate();
+    }
+
+    /** Remove the ignore skip so compress can run again. */
+    public function clearIgnored(int $attachmentId): void
+    {
+        if ($attachmentId <= 0) {
+            return;
+        }
+
+        delete_post_meta($attachmentId, self::META_IGNORE);
+        LibraryStats::invalidate();
+    }
+
+    /** True if bulk should skip this attachment. */
+    public function isIgnored(int $attachmentId): bool
+    {
+        if ($attachmentId <= 0) {
+            return false;
+        }
+
+        $reason = get_post_meta($attachmentId, self::META_IGNORE, true);
+
+        return is_string($reason) && $reason !== '';
+    }
+
+    /** Set the finished flag without counting the row as missing. */
+    private function writeCompressedFlag(int $attachmentId): void
+    {
+        update_post_meta($attachmentId, self::META_FLAG, '1');
+        delete_post_meta($attachmentId, self::META_IGNORE);
     }
 
     /** Resolved backup root, or null. */

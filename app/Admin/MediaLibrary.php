@@ -376,6 +376,8 @@ final class MediaLibrary
 
         $flag = $this->metaFirst($meta, CompressionService::META_FLAG);
         $flagged = $flag === '1' || $flag === 1 || $flag === true;
+        $ignoreReason = $this->metaFirst($meta, CompressionService::META_IGNORE);
+        $ignored = is_string($ignoreReason) && $ignoreReason !== '';
         $hasBackup = $originalCount > 0;
         // Finished with backup = hard lock.
         $processed = $flagged && $statsStatus !== 'ineligible' && $hasBackup;
@@ -386,7 +388,10 @@ final class MediaLibrary
             );
         $lines = [];
 
-        if ($flagged && $statsStatus === 'unavailable') {
+        if ($ignored) {
+            $lines[] = '<strong style="color:#b32d2e;">' . esc_html__('Missing file', 'slimify') . '</strong>';
+            $lines[] = esc_html__('Listed in the media library but the original is not on the server.', 'slimify');
+        } elseif ($flagged && $statsStatus === 'unavailable') {
             $lines[] = '<strong style="color:#b32d2e;">' . esc_html__('Unavailable', 'slimify') . '</strong>';
             $lines[] = esc_html__('Source is not available for compression.', 'slimify');
         } elseif ($processed) {
@@ -459,7 +464,7 @@ final class MediaLibrary
             $lines[] = esc_html__('Previous result — detailed statistics unavailable.', 'slimify');
         }
 
-        if (!$processing) {
+        if (!$processing && !$ignored) {
             $lines[] = $webpCount > 0
                 ? esc_html(
                     sprintf(
@@ -478,7 +483,12 @@ final class MediaLibrary
         }
 
         if (AjaxAuth::canManageAttachment($attachmentId)) {
-            if ($processing) {
+            if ($ignored) {
+                $lines[] = '<em>' . esc_html__(
+                    'Skipped for compression. Restore the file or delete the attachment from Media Compressor → Missing files.',
+                    'slimify'
+                ) . '</em>';
+            } elseif ($processing) {
                 $lines[] = sprintf(
                     '<button type="button" class="button button-small" disabled aria-disabled="true">%s</button>',
                     esc_html__('Processing…', 'slimify')

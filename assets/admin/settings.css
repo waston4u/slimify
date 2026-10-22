@@ -405,3 +405,38 @@
 }
 .slimify-wrap .button { min-height: 30px; }
 .slimify-wrap .form-table { margin: 0; }
+.slimify-tabs {
+  margin: 0 0 12px;
+  padding-top: 0;
+}
+.slimify-tab-count {
+  display: inline-block;
+  margin-left: 6px;
+  min-width: 1.4em;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--sf-soft);
+  border: 1px solid var(--sf-border);
+  color: var(--sf-muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.6;
+  vertical-align: middle;
+}
+.nav-tab-active .slimify-tab-count {
+  color: var(--sf-text);
+}
+.slimify-missing-table-wrap {
+  margin-top: 12px;
+  overflow-x: auto;
+}
+.slimify-missing-table {
+  border: 1px solid var(--sf-border-strong);
+}
+.slimify-missing-path code {
+  font-size: 12px;
+  word-break: break-all;
+}
+.slimify-missing-empty td {
+  color: var(--sf-muted);
+}
