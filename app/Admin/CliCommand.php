@@ -148,6 +148,11 @@ final readonly class CliCommand
         }
 
         $result = $this->offloadAdapter->compressAttachment($id, $dryRun);
+        if (!empty($result['ignored'])) {
+            \WP_CLI::warning(sprintf('#%d missing on disk (ignored)', $id));
+
+            return 'skip';
+        }
         if (!empty($result['busy'])) {
             // Wait briefly for the compress lock.
             if (!$dryRun) {
@@ -162,6 +167,12 @@ final readonly class CliCommand
             } else {
                 return 'skip';
             }
+        }
+
+        if (!empty($result['ignored'])) {
+            \WP_CLI::warning(sprintf('#%d missing on disk (ignored)', $id));
+
+            return 'skip';
         }
 
         return $result['ok'] ? 'ok' : 'fail';

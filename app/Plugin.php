@@ -7,6 +7,7 @@ namespace Slimify;
 use Slimify\Admin\BulkCompression;
 use Slimify\Admin\CliCommand;
 use Slimify\Admin\MediaLibrary;
+use Slimify\Admin\MissingFiles;
 use Slimify\Admin\SettingsPage;
 use Slimify\Admin\StorageHealth;
 use Slimify\Compression\CompressionService;
@@ -62,7 +63,8 @@ final class Plugin
         new Hooks($this->compressionService, $this->offloadAdapter)->register();
         $this->webpService->registerDeliveryFilters();
         $this->webpService->registerMaintenanceHooks();
-        $this->offloadAdapter->register();
+        // Defer to init so themes/mu-plugins can register slimify_offload_file_path_hooks.
+        add_action('init', [$this->offloadAdapter, 'register']);
 
         $bulkCompression = new BulkCompression(
             $this->offloadAdapter,
@@ -70,6 +72,11 @@ final class Plugin
         );
         $bulkCompression->register();
         new MediaLibrary($this->offloadAdapter, $this->compressionService)->register();
+        new MissingFiles(
+            $this->offloadAdapter,
+            $this->compressionService,
+            $bulkCompression
+        )->register();
 
         $storageHealth = new StorageHealth(
             $this->compressionService,

@@ -31,7 +31,7 @@ final class WebpService
     private static array $mapCache = [];
 
     /**
-     * @var array<string, bool>
+     * @var array<string, string|null>
      */
     private static array $serveCache = [];
 
@@ -47,9 +47,12 @@ final class WebpService
     /** Register front-end WebP URL filters. */
     public function registerDeliveryFilters(): void
     {
-        add_filter('wp_get_attachment_url', [$this, 'filterAttachmentUrl'], 10, 2);
-        add_filter('wp_get_attachment_image_src', [$this, 'filterImageSrc'], 10, 4);
-        add_filter('wp_calculate_image_srcset', [$this, 'filterSrcset'], 10, 5);
+        // Run after offloaders' URL rewrites (AS3CF swaps to the bucket URL at
+        // priority 99) so the extension swap applies to the final URL.
+        add_filter('wp_get_attachment_url', [$this, 'filterAttachmentUrl'], 999, 2);
+        add_filter('wp_get_attachment_image_src', [$this, 'filterImageSrc'], 999, 4);
+        add_filter('wp_get_attachment_image_attributes', [$this, 'filterImageAttributes'], 999, 3);
+        add_filter('wp_calculate_image_srcset', [$this, 'filterSrcset'], 999, 5);
         add_action('send_headers', [$this, 'sendVaryAccept']);
     }
 
@@ -84,6 +87,7 @@ final class WebpService
 
         $dir = dirname($attached);
         $changed = false;
+        $removed = [];
 
         foreach ($map as $sizeKey => $basename) {
             $webpPath = $dir . DIRECTORY_SEPARATOR . $basename;
@@ -95,6 +99,7 @@ final class WebpService
 
             if (!is_file($webpPath)) {
                 unset($map[$sizeKey]);
+                $removed[] = $basename;
                 $changed = true;
                 continue;
             }
@@ -102,6 +107,7 @@ final class WebpService
             if ($this->isStale($webpPath, $source)) {
                 $this->purgeWebp($webpPath);
                 unset($map[$sizeKey]);
+                $removed[] = $basename;
                 $changed = true;
             }
         }
@@ -111,6 +117,16 @@ final class WebpService
                 delete_post_meta($attachmentId, CompressionService::META_WEBP);
             } else {
                 update_post_meta($attachmentId, CompressionService::META_WEBP, $map);
+            }
+
+            $remote = get_post_meta($attachmentId, CompressionService::META_WEBP_REMOTE, true);
+            if (is_array($remote) && is_array($remote['files'] ?? null)) {
+                $remote['files'] = array_values(array_diff($remote['files'], $removed));
+                if ($remote['files'] === []) {
+                    delete_post_meta($attachmentId, CompressionService::META_WEBP_REMOTE);
+                } else {
+                    update_post_meta($attachmentId, CompressionService::META_WEBP_REMOTE, $remote);
+                }
             }
 
             unset(self::$mapCache[$attachmentId]);
@@ -211,7 +227,7 @@ final class WebpService
             return null;
         }
 
-        if (!$this->pathGuard->isAllowed($deliverablePath) || !Limits::isFileWithinLimits($deliverablePath)) {
+        if (!$this->pathGuard->isAllowed($deliverablePath) || !Limits::isFileWebpEligible($deliverablePath)) {
             return null;
         }
 
@@ -234,7 +250,7 @@ final class WebpService
             return null;
         }
 
-        if (!Limits::isFileWithinLimits($encodeFrom)) {
+        if (!Limits::isFileWebpEligible($encodeFrom)) {
             return null;
         }
 
@@ -510,6 +526,68 @@ final class WebpService
     }
 
     /**
+     * Rewrite <img> src/srcset attributes to WebP when appropriate.
+     *
+     * Runs after offloaders rebuild attributes (AS3CF regenerates src at
+     * priority 99), so swapped values aren't clobbered.
+     *
+     * @param array<string, string>|mixed $attr
+     * @return array<string, string>|mixed
+     */
+    public function filterImageAttributes(mixed $attr, mixed $attachment, mixed $size): mixed
+    {
+        if (
+            !is_array($attr)
+            || !$this->settings->generateWebp()
+            || $this->isNonWebpContext()
+            || !$this->clientAcceptsWebp()
+        ) {
+            return $attr;
+        }
+
+        $attachmentId = is_object($attachment) && isset($attachment->ID) ? (int)$attachment->ID : 0;
+        if ($attachmentId <= 0) {
+            return $attr;
+        }
+
+        if (isset($attr['src']) && is_string($attr['src'])) {
+            $webp = $this->serveUrlFor($attachmentId, $attr['src']);
+            if ($webp !== null) {
+                $attr['src'] = $webp;
+            }
+        }
+
+        if (isset($attr['srcset']) && is_string($attr['srcset'])) {
+            $attr['srcset'] = $this->srcsetUrlsToWebp($attachmentId, $attr['srcset']);
+        }
+
+        return $attr;
+    }
+
+    /** Swap each srcset candidate URL for its servable WebP variant. */
+    private function srcsetUrlsToWebp(int $attachmentId, string $srcset): string
+    {
+        $parts = explode(',', $srcset);
+        foreach ($parts as $i => $part) {
+            $piece = trim((string)$part);
+            if ($piece === '') {
+                continue;
+            }
+            $bits = preg_split('/\s+/', $piece);
+            if (!is_array($bits) || $bits === []) {
+                continue;
+            }
+            $webp = $this->serveUrlFor($attachmentId, $bits[0]);
+            if ($webp !== null) {
+                $bits[0] = $webp;
+                $parts[$i] = implode(' ', $bits);
+            }
+        }
+
+        return implode(', ', $parts);
+    }
+
+    /**
      * Rewrite srcset candidates to WebP when appropriate.
      *
      * @param array<int|string, array<string, mixed>>|mixed $sources
@@ -540,8 +618,8 @@ final class WebpService
             if (!is_array($source) || empty($source['url'])) {
                 continue;
             }
-            $webpUrl = $this->swapUrlExtension((string)$source['url']);
-            if ($webpUrl !== null && $this->shouldServeWebp((int)$attachmentId, $webpUrl)) {
+            $webpUrl = $this->serveUrlFor((int)$attachmentId, (string)$source['url']);
+            if ($webpUrl !== null) {
                 $sources[$width]['url'] = $webpUrl;
             }
         }
@@ -643,12 +721,7 @@ final class WebpService
             return null;
         }
 
-        $swapped = $this->swapUrlExtension($originalUrl);
-        if ($swapped === null) {
-            return null;
-        }
-
-        return $this->shouldServeWebp($attachmentId, $swapped) ? $swapped : null;
+        return $this->serveUrlFor($attachmentId, $originalUrl);
     }
 
     /** Swap image extension for .webp in a URL. */
@@ -662,20 +735,33 @@ final class WebpService
         return $webp;
     }
 
-    /** True if a WebP URL should be served. */
-    private function shouldServeWebp(int $attachmentId, string $webpUrl): bool
+    /** Resolved WebP URL for an original URL, or null (cached). */
+    private function serveUrlFor(int $attachmentId, string $originalUrl): ?string
     {
-        $key = $attachmentId . '|' . $webpUrl;
-        if (isset(self::$serveCache[$key])) {
+        $key = $attachmentId . '|' . $originalUrl;
+        if (array_key_exists($key, self::$serveCache)) {
             return self::$serveCache[$key];
         }
 
-        return self::$serveCache[$key] = $this->resolveShouldServeWebp($attachmentId, $webpUrl);
+        return self::$serveCache[$key] = $this->resolveServeUrl($attachmentId, $originalUrl);
     }
 
-    /** Serve WebP only if mapped and the file exists. */
-    private function resolveShouldServeWebp(int $attachmentId, string $webpUrl): bool
+    /**
+     * Resolve the WebP URL that can actually be served for an original URL:
+     *
+     * - Local URL → local sibling must exist on disk.
+     * - Remote URL + confirmed offloaded → remote .webp (CDN).
+     * - Remote URL + unconfirmed → local sibling URL from origin, if the file
+     *   exists. Universal fallback: works with any offloader, no plugin API —
+     *   and never serves a remote .webp that isn't really there.
+     */
+    private function resolveServeUrl(int $attachmentId, string $originalUrl): ?string
     {
+        $webpUrl = $this->swapUrlExtension($originalUrl);
+        if ($webpUrl === null) {
+            return null;
+        }
+
         $path = (string)(wp_parse_url($webpUrl, PHP_URL_PATH) ?? '');
         $basename = $path !== '' ? basename($path) : '';
         if (
@@ -683,14 +769,38 @@ final class WebpService
             || str_contains($basename, '..')
             || !str_ends_with(strtolower($basename), '.webp')
         ) {
-            return false;
+            return null;
         }
 
         $map = $this->webpMap($attachmentId, []);
         if (!in_array($basename, $map, true)) {
-            return false;
+            return null;
         }
 
+        if ($this->isLocalMediaUrl($webpUrl)) {
+            return $this->localWebpExists($attachmentId, $basename) ? $webpUrl : null;
+        }
+
+        if ($this->remoteWebpConfirmed($attachmentId, $webpUrl, $basename)) {
+            return $webpUrl;
+        }
+
+        return $this->localWebpUrl($attachmentId, $basename);
+    }
+
+    /** True when the URL points at this site's own uploads domain. */
+    private function isLocalMediaUrl(string $url): bool
+    {
+        $uploads = wp_upload_dir();
+        $baseHost = wp_parse_url((string)($uploads['baseurl'] ?? ''), PHP_URL_HOST);
+        $urlHost = wp_parse_url($url, PHP_URL_HOST);
+
+        return is_string($baseHost) && $baseHost !== '' && $urlHost === $baseHost;
+    }
+
+    /** Local-file gate for WebP serving; drops the mapping when the file is gone. */
+    private function localWebpExists(int $attachmentId, string $basename): bool
+    {
         $attached = get_attached_file($attachmentId, true);
         if (!is_string($attached) || $attached === '') {
             return false;
@@ -705,6 +815,62 @@ final class WebpService
         $this->dropWebpBasename($attachmentId, $basename);
 
         return false;
+    }
+
+    /** Remote gate: only serve WebPs confirmed pushed for this delivery host. */
+    private function remoteWebpConfirmed(int $attachmentId, string $webpUrl, string $basename): bool
+    {
+        $remote = get_post_meta($attachmentId, CompressionService::META_WEBP_REMOTE, true);
+        if (
+            !is_array($remote)
+            || !is_string($remote['host'] ?? null)
+            || !is_array($remote['files'] ?? null)
+        ) {
+            return false;
+        }
+
+        $host = wp_parse_url($webpUrl, PHP_URL_HOST);
+
+        return $host === $remote['host'] && in_array($basename, $remote['files'], true);
+    }
+
+    /**
+     * Origin URL for a local WebP sibling, or null when the file isn't there.
+     * Used as the universal fallback for offloaded attachments whose WebP
+     * hasn't been confirmed on the remote storage yet.
+     */
+    private function localWebpUrl(int $attachmentId, string $basename): ?string
+    {
+        $attached = get_attached_file($attachmentId, true);
+        if (!is_string($attached) || $attached === '') {
+            return null;
+        }
+
+        $webpPath = dirname($attached) . DIRECTORY_SEPARATOR . $basename;
+        if (!is_file($webpPath)) {
+            return null; // Remote file may still exist — meta is untouched.
+        }
+
+        $uploads = wp_upload_dir();
+        $basedir = isset($uploads['basedir']) ? wp_normalize_path((string)$uploads['basedir']) : '';
+        $baseurl = isset($uploads['baseurl']) ? (string)$uploads['baseurl'] : '';
+        $normalised = wp_normalize_path($webpPath);
+        if ($basedir === '' || $baseurl === '' || !str_starts_with($normalised, $basedir)) {
+            return null;
+        }
+
+        // baseurl can be host-relative or malformed (e.g. 'http:///app/uploads'
+        // in some CLI/docroot configs) — rebuild it from home_url's path.
+        $baseHost = wp_parse_url($baseurl, PHP_URL_HOST);
+        if (!is_string($baseHost) || $baseHost === '') {
+            $basePath = preg_replace('#^[a-z][a-z0-9+.-]*://*#i', '', $baseurl);
+            $baseurl = home_url('/' . ltrim((string)$basePath, '/'));
+            if (!is_string(wp_parse_url($baseurl, PHP_URL_HOST))) {
+                return null;
+            }
+        }
+
+        return $baseurl . substr($normalised, strlen($basedir));
     }
 
     /** Remove a missing WebP basename from meta. */
@@ -731,6 +897,17 @@ final class WebpService
             delete_post_meta($attachmentId, CompressionService::META_WEBP);
         } else {
             update_post_meta($attachmentId, CompressionService::META_WEBP, $map);
+        }
+
+        $remote = get_post_meta($attachmentId, CompressionService::META_WEBP_REMOTE, true);
+        if (is_array($remote) && is_array($remote['files'] ?? null)) {
+            $files = array_values(array_diff($remote['files'], [$basename]));
+            if ($files === []) {
+                delete_post_meta($attachmentId, CompressionService::META_WEBP_REMOTE);
+            } else {
+                $remote['files'] = $files;
+                update_post_meta($attachmentId, CompressionService::META_WEBP_REMOTE, $remote);
+            }
         }
 
         unset(self::$mapCache[$attachmentId]);

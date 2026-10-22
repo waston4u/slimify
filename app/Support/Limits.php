@@ -75,6 +75,15 @@ final class Limits
     /** Deferred queue: wall-clock budget per drain (seconds) */
     public const float QUEUE_DRAIN_BUDGET_SECONDS = 25.0;
 
+    /** Missing-file scan attachments per AJAX page */
+    public const int MISSING_SCAN_PAGE = 25;
+
+    /** Missing-file list rows per request */
+    public const int MISSING_LIST_PAGE = 50;
+
+    /** Missing-file deletes per AJAX request */
+    public const int MISSING_DELETE_PAGE = 20;
+
     /** Supported MIME types. */
     public static function supportedMimes(): array
     {
@@ -116,6 +125,39 @@ final class Limits
 
         // Cap extreme dimensions.
         if ($w > 10000 || $h > 10000) {
+            return false;
+        }
+
+        return ($w * $h) <= self::MAX_PIXELS;
+    }
+
+    /**
+     * True if the file can produce a WebP sibling.
+     *
+     * The MIN_FILE_BYTES floor only applies to compression: below it a
+     * lossy/lossless pass is pointless, but a WebP sibling is still
+     * worthwhile so delivery can serve WebP consistently.
+     */
+    public static function isFileWebpEligible(string $filePath): bool
+    {
+        if ($filePath === '' || !is_file($filePath) || !is_readable($filePath)) {
+            return false;
+        }
+
+        clearstatcache(true, $filePath);
+        $size = filesize($filePath);
+        if ($size === false || $size <= 0 || $size > self::MAX_FILE_BYTES) {
+            return false;
+        }
+
+        $info = @getimagesize($filePath);
+        if (!is_array($info) || !isset($info[0], $info[1])) {
+            return false;
+        }
+
+        $w = (int)$info[0];
+        $h = (int)$info[1];
+        if ($w <= 0 || $h <= 0 || $w > 10000 || $h > 10000) {
             return false;
         }
 

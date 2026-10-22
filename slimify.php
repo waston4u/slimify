@@ -3,7 +3,7 @@
 /**
  * Plugin Name: Slimify
  * Description: Lightweight, high-performance image compression and automatic WebP conversion to speed up your WordPress site.
- * Version: 1.0.0
+ * Version: 1.0.1
  * Requires at least: 6.4
  * Tested up to: 7.0
  * Requires PHP: 8.4
