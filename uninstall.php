@@ -58,6 +58,9 @@ $slimifyUninstallSite = static function (): void {
     delete_transient('slimify_storage_exposure_probe_' . $blogId);
     delete_transient('slimify_bulk_status_cache_' . $blogId);
 
+    wp_unschedule_hook('slimify_drain_queue');
+    wp_unschedule_hook('slimify_reverify_remote');
+
     global $wpdb;
 
     // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching

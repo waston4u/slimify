@@ -40,7 +40,7 @@ final readonly class MissingFiles
         $cleared = 0;
 
         foreach ($ids as $id) {
-            if ($this->offloadAdapter->hasLocalSource($id)) {
+            if (!$this->offloadAdapter->isMissingLocalGhost($id)) {
                 if ($this->compressionService->isIgnored($id)) {
                     $this->compressionService->clearIgnored($id);
                     ++$cleared;
@@ -125,7 +125,12 @@ final readonly class MissingFiles
                 $failed[] = $id;
                 continue;
             }
-            if (!current_user_can('delete_post', $id)) {
+            if (!current_user_can('delete_post', $id) || !$this->compressionService->isIgnored($id)) {
+                $failed[] = $id;
+                continue;
+            }
+            if (!$this->offloadAdapter->isMissingLocalGhost($id)) {
+                $this->compressionService->clearIgnored($id);
                 $failed[] = $id;
                 continue;
             }

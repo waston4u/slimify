@@ -212,6 +212,17 @@ final class Site
         return false;
     }
 
+    /** Lowercase host without IPv6 brackets or a leading www. */
+    public static function normaliseHost(string $host): string
+    {
+        $host = strtolower(trim($host, '[]'));
+        if (str_starts_with($host, 'www.')) {
+            return substr($host, 4);
+        }
+
+        return $host;
+    }
+
     /** Normalise a path for comparison. */
     public static function normalizePath(string $path): string
     {
