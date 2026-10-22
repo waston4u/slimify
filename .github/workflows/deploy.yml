@@ -19,6 +19,33 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+          tools: none
+
+      - name: Lint PHP
+        shell: bash
+        run: |
+          set -euo pipefail
+          find . -name '*.php' -not -path './vendor/*' -not -path './node_modules/*' -print0 \
+            | xargs -0 -n1 -P4 php -l > /dev/null
+
+      - name: Check versions match
+        shell: bash
+        run: |
+          HEADER=$(grep -iE '^[[:space:]]*\*?[[:space:]]*Version[[:space:]]*:' slimify.php | head -1 | sed -E 's/.*Version[[:space:]]*:[[:space:]]*//' | tr -d '\r' | xargs)
+          CONSTANT=$(grep -oE "define\('SLIMIFY_VERSION',[[:space:]]*'[^']+'" slimify.php | sed -E "s/.*'([^']+)'$/\1/")
+          STABLE=$(grep -iE '^Stable tag:' readme.txt | head -1 | sed -E 's/^[Ss]table [Tt]ag:[[:space:]]*//' | tr -d '\r' | xargs)
+
+          echo "Header: $HEADER  Constant: $CONSTANT  Stable tag: $STABLE"
+          if [ "$HEADER" != "$CONSTANT" ] || [ "$HEADER" != "$STABLE" ]; then
+            echo "ERROR: Version, SLIMIFY_VERSION and Stable tag must match."
+            exit 1
+          fi
+
       - name: Read plugin version
         id: version
         shell: bash

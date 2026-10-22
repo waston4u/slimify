@@ -42,7 +42,7 @@ final readonly class BulkCompression
             SELECT
                 COUNT(DISTINCT p.ID) AS total,
                 COUNT(DISTINCT done.post_id) AS compressed,
-                COUNT(DISTINCT ignored.post_id) AS missing
+                COUNT(DISTINCT CASE WHEN done.post_id IS NULL THEN ignored.post_id END) AS missing
             FROM $wpdb->posts p
             LEFT JOIN $wpdb->postmeta done
                 ON done.post_id = p.ID

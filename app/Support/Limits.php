@@ -75,6 +75,12 @@ final class Limits
     /** Deferred queue: wall-clock budget per drain (seconds) */
     public const float QUEUE_DRAIN_BUDGET_SECONDS = 25.0;
 
+    /** Remote WebP HEAD probes per push */
+    public const int REMOTE_VERIFY_MAX_FILES = 12;
+
+    /** Remote WebP verification: wall-clock budget per push (seconds) */
+    public const float REMOTE_VERIFY_BUDGET_SECONDS = 10.0;
+
     /** Missing-file scan attachments per AJAX page */
     public const int MISSING_SCAN_PAGE = 25;
 

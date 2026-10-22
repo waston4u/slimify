@@ -5,7 +5,7 @@
  * Description: Lightweight, high-performance image compression and automatic WebP conversion to speed up your WordPress site.
  * Version: 1.0.1
  * Requires at least: 6.4
- * Tested up to: 7.0
+ * Tested up to: 7.1.3
  * Requires PHP: 8.4
  * Author: Miro Sedlacek
  * Text Domain: slimify
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('SLIMIFY_VERSION', '1.0.0');
+define('SLIMIFY_VERSION', '1.0.1');
 define('SLIMIFY_FILE', __FILE__);
 define('SLIMIFY_PATH', plugin_dir_path(__FILE__));
 define('SLIMIFY_URL', plugin_dir_url(__FILE__));

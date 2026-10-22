@@ -12,7 +12,18 @@ use Slimify\Compression\CompressionService;
 use Slimify\Support\Limits;
 use Slimify\Support\PathGuard;
 use Slimify\Support\RemoteUrlGuard;
+use Slimify\Support\Site;
 use Slimify\Webp\WebpService;
+
+use function count;
+use function function_exists;
+use function in_array;
+use function is_array;
+use function is_bool;
+use function is_callable;
+use function is_object;
+use function is_string;
+use function strlen;
 
 
 final class OffloadAdapter
@@ -328,13 +339,14 @@ final class OffloadAdapter
     /** Run compressAttachmentMetadata + remote push handling. */
     private function runLocalCompressPipeline(int $attachmentId, array $metadata, bool $fromRemote): array
     {
+        if ($this->compressionService->isIgnored($attachmentId)) {
+            $this->compressionService->clearIgnored($attachmentId);
+        }
+
         $metadata = $this->compressionService->compressAttachmentMetadata($metadata, $attachmentId);
-        wp_update_attachment_metadata($attachmentId, $metadata);
-
         $outcome = $this->compressionService->lastOutcome();
-        $needsRemote = $fromRemote || $this->usesRemoteStorage($attachmentId);
-        $pushReason = $fromRemote ? 'compress-remote' : 'compress-local';
 
+        // Metadata is unchanged here; saving it would only trigger a needless offloader upload.
         if ($outcome === 'busy' || $outcome === 'deferred') {
             return [
                 'ok' => false,
@@ -343,6 +355,11 @@ final class OffloadAdapter
                 'busy' => true,
             ];
         }
+
+        wp_update_attachment_metadata($attachmentId, $metadata);
+
+        $needsRemote = $fromRemote || $this->usesRemoteStorage($attachmentId);
+        $pushReason = $fromRemote ? 'compress-remote' : 'compress-local';
 
         if ($outcome === 'partial') {
             $this->pushToRemote($attachmentId, $fromRemote ? 'compress-partial-remote' : 'compress-partial', $needsRemote);
@@ -515,7 +532,33 @@ final class OffloadAdapter
             return null;
         }
 
-        return $this->downloadUrlToJailTemp($url);
+        $downloaded = $this->downloadUrlToJailTemp($url);
+        if ($downloaded === null) {
+            return null;
+        }
+
+        // CDNs can negotiate a different format (WebP/AVIF) behind a .jpg/.png URL.
+        if (!$this->matchesAttachmentMime($downloaded['path'], $attachmentId)) {
+            wp_delete_file($downloaded['path']);
+
+            return null;
+        }
+
+        return $downloaded;
+    }
+
+    /** True if the file's detected image type matches the attachment's MIME. */
+    private function matchesAttachmentMime(string $path, int $attachmentId): bool
+    {
+        $expected = strtolower((string)get_post_mime_type($attachmentId));
+        if ($expected === '') {
+            return true;
+        }
+
+        $info = @getimagesize($path);
+        $actual = is_array($info) && isset($info['mime']) ? strtolower((string)$info['mime']) : '';
+
+        return $actual === $expected;
     }
 
     /** Push compressed files to remote storage. */
@@ -549,6 +592,8 @@ final class OffloadAdapter
 
         // Optional host push handlers.
         $handlers = apply_filters('slimify_remote_push_handlers', [], $attachmentId, $context);
+        $explicitResult = $filtered !== null;
+        $acceptedByUniversal = false;
         if (is_array($handlers)) {
             $handlerAccepted = false;
             $handlerRejected = false;
@@ -560,6 +605,7 @@ final class OffloadAdapter
                     $handlerResult = $handler($attachmentId, $context);
                     if ($handlerResult === true) {
                         $handlerAccepted = true;
+                        $acceptedByUniversal = $handler === [$this, 'pushViaMetadataUpdate'];
                         break;
                     }
                     if ($handlerResult === false) {
@@ -578,8 +624,17 @@ final class OffloadAdapter
 
         if (is_bool($filtered)) {
             // Ground truth: probe each WebP's remote URL regardless of what any
-            // handler claimed — works for every offload plugin.
-            $this->verifyRemoteWebps($attachmentId, $context);
+            // handler claimed — works for every offload plugin. Same-site URLs
+            // have nothing remote to confirm.
+            if ($needsRemoteWrite && $url !== '' && !$this->isSameSiteMediaUrl($url)) {
+                $verified = $this->verifyRemoteWebps($attachmentId, $context);
+
+                // The universal handler only proves a metadata save reached some
+                // listener, not that an upload happened.
+                if ($filtered && $acceptedByUniversal && !$explicitResult && $verified === false) {
+                    return false;
+                }
+            }
 
             return $filtered;
         }
@@ -679,37 +734,52 @@ final class OffloadAdapter
      * confirmed set — the only check that works for every offload plugin.
      *
      * @param array<string, mixed> $context
+     *
+     * @return bool|null null when there was nothing to verify, otherwise
+     *                   whether at least one WebP was confirmed remotely.
      */
-    private function verifyRemoteWebps(int $attachmentId, array $context, bool $reschedule = true): void
+    private function verifyRemoteWebps(int $attachmentId, array $context, bool $reschedule = true): ?bool
     {
         $url = is_string($context['url'] ?? null) ? $context['url'] : '';
         $host = $url !== '' ? wp_parse_url($url, PHP_URL_HOST) : null;
         $path = $url !== '' ? wp_parse_url($url, PHP_URL_PATH) : null;
         $scheme = $url !== '' ? wp_parse_url($url, PHP_URL_SCHEME) : null;
         if (!is_string($host) || $host === '' || !is_string($path) || !is_string($scheme)) {
-            return;
+            return null;
         }
 
         // SSRF guard: the base URL must resolve to a public address.
         if (!RemoteUrlGuard::isSafe($scheme . '://' . $host . dirname($path) . '/')) {
-            return;
+            return null;
         }
 
         $map = get_post_meta($attachmentId, CompressionService::META_WEBP, true);
         if (!is_array($map) || $map === []) {
-            return;
+            return null;
         }
 
         $dir = trailingslashit(dirname($path));
         $confirmed = [];
         $missing = 0;
+        $probed = 0;
+        $deadline = microtime(true) + Limits::REMOTE_VERIFY_BUDGET_SECONDS;
 
         foreach ($map as $basename) {
             if (!is_string($basename) || $basename === '' || wp_basename($basename) !== $basename) {
                 continue;
             }
+            // Unprobed files count as missing so the deferred re-verify picks them up.
+            if ($probed >= Limits::REMOTE_VERIFY_MAX_FILES || microtime(true) > $deadline) {
+                ++$missing;
+                continue;
+            }
+            ++$probed;
+
             $remote = $scheme . '://' . $host . $dir . $basename;
-            $response = wp_remote_head($remote, ['timeout' => 8, 'redirection' => 3]);
+            $response = wp_safe_remote_head($remote, [
+                'timeout' => Limits::PROBE_TIMEOUT_SECONDS,
+                'redirection' => 0,
+            ]);
             if (!is_wp_error($response) && (int)wp_remote_retrieve_response_code($response) === 200) {
                 $confirmed[] = $basename;
             } else {
@@ -724,6 +794,7 @@ final class OffloadAdapter
                 'host'  => $host,
                 'files' => $confirmed,
             ]);
+            $this->clearRemotePushFailed($attachmentId);
         }
 
         // Queue-based offloaders may not have landed the files yet — one
@@ -731,6 +802,8 @@ final class OffloadAdapter
         if ($missing > 0 && $reschedule && function_exists('wp_schedule_single_event')) {
             wp_schedule_single_event(time() + 10 * MINUTE_IN_SECONDS, 'slimify_reverify_remote', [$attachmentId]);
         }
+
+        return $confirmed !== [];
     }
 
     /**
@@ -741,7 +814,7 @@ final class OffloadAdapter
     public function reverifyRemoteWebps(int $attachmentId): void
     {
         $url = $this->sourceUrl($attachmentId, 'full') ?? '';
-        if ($url === '') {
+        if ($url === '' || $this->isSameSiteMediaUrl($url)) {
             return;
         }
 
@@ -968,7 +1041,7 @@ final class OffloadAdapter
             return false;
         }
 
-        $host = $this->normaliseHost((string)$parts['host']);
+        $host = Site::normaliseHost((string)$parts['host']);
         $path = rawurldecode((string)($parts['path'] ?? ''));
         if ($host === '' || $path === '') {
             return false;
@@ -989,7 +1062,7 @@ final class OffloadAdapter
                 continue;
             }
 
-            if ($this->normaliseHost((string)$baseParts['host']) !== $host) {
+            if (Site::normaliseHost((string)$baseParts['host']) !== $host) {
                 continue;
             }
 
@@ -1004,17 +1077,6 @@ final class OffloadAdapter
         }
 
         return false;
-    }
-
-    /** Lowercase host without a leading www. */
-    private function normaliseHost(string $host): string
-    {
-        $host = strtolower(trim($host, '[]'));
-        if (str_starts_with($host, 'www.')) {
-            return substr($host, 4);
-        }
-
-        return $host;
     }
 
     /** Skip a library row whose file is not on disk. */
@@ -1070,7 +1132,7 @@ final class OffloadAdapter
                 return null;
             }
 
-            $temp = dirname($real) . DIRECTORY_SEPARATOR . '.slimify-src-' . bin2hex(random_bytes(8)) . '-' . $basename;
+            $temp = trailingslashit(get_temp_dir()) . 'slimify-src-' . bin2hex(random_bytes(8)) . '-' . $basename;
             if (@copy($real, $temp) && is_file($temp)) {
                 if (!Limits::isFileWebpEligible($temp)) {
                     wp_delete_file($temp);
@@ -1078,7 +1140,11 @@ final class OffloadAdapter
                     return null;
                 }
 
-                return ['path' => $temp, 'owned' => true];
+                if ($this->pathGuard->isAllowed($temp)) {
+                    return ['path' => $temp, 'owned' => true];
+                }
+
+                wp_delete_file($temp);
             }
 
             if (!Limits::isFileWebpEligible($real)) {
@@ -1422,6 +1488,17 @@ final class OffloadAdapter
             ];
         }
         $stats['remote_push'] = 'failed';
+        update_post_meta($attachmentId, CompressionService::META_STATS, $stats);
+    }
+
+    /** Drop the push-failed marker once remote WebPs are confirmed. */
+    private function clearRemotePushFailed(int $attachmentId): void
+    {
+        $stats = get_post_meta($attachmentId, CompressionService::META_STATS, true);
+        if (!is_array($stats) || ($stats['remote_push'] ?? '') !== 'failed') {
+            return;
+        }
+        unset($stats['remote_push']);
         update_post_meta($attachmentId, CompressionService::META_STATS, $stats);
     }
 }

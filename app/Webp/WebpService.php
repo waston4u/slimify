@@ -795,7 +795,8 @@ final class WebpService
         $baseHost = wp_parse_url((string)($uploads['baseurl'] ?? ''), PHP_URL_HOST);
         $urlHost = wp_parse_url($url, PHP_URL_HOST);
 
-        return is_string($baseHost) && $baseHost !== '' && $urlHost === $baseHost;
+        return is_string($baseHost) && $baseHost !== '' && is_string($urlHost)
+            && Site::normaliseHost($urlHost) === Site::normaliseHost($baseHost);
     }
 
     /** Local-file gate for WebP serving; drops the mapping when the file is gone. */
