@@ -68,9 +68,9 @@ final class Assets
     }
 
     /**
-     * Ensure shared admin helpers are available (common.css + common.js).
+     * Load shared admin CSS/JS (common.css + common.js).
      *
-     * @param list<string> $scriptDeps Extra deps for the common script (e.g. jquery).
+     * @param list<string> $scriptDeps Extra script dependencies (e.g. jquery).
      */
     public static function enqueueCommon(array $scriptDeps = []): void
     {
@@ -79,8 +79,8 @@ final class Assets
     }
 
     /**
-     * Queue a non-executable JSON config blob for the current admin request.
-     * Printed before footer scripts so page JS can readConfig(id).
+     * Queue a JSON config blob for the current admin page.
+     * Printed before footer scripts for readConfig(id).
      *
      * @param array<string, mixed> $data
      */

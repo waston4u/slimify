@@ -29,8 +29,7 @@ use function strlen;
 final class OffloadAdapter
 {
     /**
-     * Attachment ids whose metadata was already saved this request — an
-     * offloader listening on wp_update_attachment_metadata has synced once.
+     * Attachment IDs whose metadata was already saved this request.
      *
      * @var array<int, bool>
      */
@@ -46,13 +45,9 @@ final class OffloadAdapter
     /** Register hooks. */
     public function register(): void
     {
-        /**
-         * File-list filter names used by offload plugins when they build an
-         * upload manifest. Any offloader that offers such a hook can be added
-         * via `slimify_offload_file_path_hooks` — known conventions seeded.
-         */
+        // File-list filters from offload plugins (extend via slimify_offload_file_path_hooks).
         $hooks = apply_filters('slimify_offload_file_path_hooks', [
-            'as3cf_attachment_file_paths', // WP Offload Media / AS3CF (free + Pro).
+            'as3cf_attachment_file_paths', // WP Offload Media / AS3CF.
         ]);
         if (!is_array($hooks)) {
             $hooks = [];
@@ -65,12 +60,10 @@ final class OffloadAdapter
             add_filter($hook, [$this, 'mergeExtraFilePaths'], 10, 3);
         }
 
-        // Record metadata saves so the universal push doesn't re-trigger an
-        // upload the offloader already ran this request.
+        // Track metadata saves so the universal push does not upload twice.
         add_filter('wp_update_attachment_metadata', [$this, 'recordMetaSync'], PHP_INT_MAX, 2);
 
-        // Universal push: nearly every offloader re-uploads on
-        // wp_update_attachment_metadata — works with any offload plugin.
+        // Most offloaders re-upload when metadata is updated.
         add_filter('slimify_remote_push_handlers', function (mixed $handlers): array {
             $handlers = is_array($handlers) ? $handlers : [];
             $handlers[] = [$this, 'pushViaMetadataUpdate'];
@@ -78,9 +71,55 @@ final class OffloadAdapter
             return $handlers;
         }, 50);
 
-        // Async/queue-based offloaders upload on their own schedule — a later
-        // re-verify promotes confirmed WebPs once their sync lands.
+        // Confirm remote WebPs after a deferred offload finishes.
         add_action('slimify_reverify_remote', [$this, 'reverifyRemoteWebps']);
+
+        // Confirm WebPs when WP Offload Media uploads after Slimify has compressed.
+        add_action('as3cf_post_upload_item', [$this, 'onOffloaderUploaded']);
+    }
+
+    /** Re-verify WebPs after WP Offload Media finishes an upload. */
+    public function onOffloaderUploaded(mixed $item): void
+    {
+        if (!is_object($item) || !method_exists($item, 'source_id')) {
+            return;
+        }
+        if (method_exists($item, 'source_type') && $item->source_type() !== 'media-library') {
+            return;
+        }
+
+        self::requestReverify((int)$item->source_id(), true);
+    }
+
+    /**
+     * Queue a remote WebP re-verify.
+     * Delivery-triggered requests are limited to once per hour per attachment.
+     */
+    public static function requestReverify(int $attachmentId, bool $force = false): void
+    {
+        static $requested = [];
+        if ($attachmentId <= 0 || isset($requested[$attachmentId]) || !function_exists('wp_schedule_single_event')) {
+            return;
+        }
+
+        // Wait until WebPs exist — the offloader may upload before they are ready.
+        $map = get_post_meta($attachmentId, CompressionService::META_WEBP, true);
+        if (!is_array($map) || $map === []) {
+            return;
+        }
+        $requested[$attachmentId] = true;
+
+        $args = [$attachmentId];
+        if ($force) {
+            wp_clear_scheduled_hook('slimify_reverify_remote', $args);
+        } else {
+            $checked = (int)get_post_meta($attachmentId, CompressionService::META_WEBP_REMOTE_CHECKED, true);
+            if ($checked > time() - HOUR_IN_SECONDS || wp_next_scheduled('slimify_reverify_remote', $args) !== false) {
+                return;
+            }
+        }
+
+        wp_schedule_single_event(time(), 'slimify_reverify_remote', $args);
     }
 
     /**
@@ -257,8 +296,7 @@ final class OffloadAdapter
     }
 
     /**
-     * Fetch remote full + intermediate sizes onto the registered local paths
-     * so CompressionService can back up and compress like a normal attachment.
+     * Download remote sizes onto the registered local paths for compression.
      * @throws RandomException
      */
     private function materializeRemoteAttachment(int $attachmentId, array $metadata): bool
@@ -346,7 +384,7 @@ final class OffloadAdapter
         $metadata = $this->compressionService->compressAttachmentMetadata($metadata, $attachmentId);
         $outcome = $this->compressionService->lastOutcome();
 
-        // Metadata is unchanged here; saving it would only trigger a needless offloader upload.
+        // Nothing changed — saving would only trigger a needless offload.
         if ($outcome === 'busy' || $outcome === 'deferred') {
             return [
                 'ok' => false,
@@ -537,7 +575,7 @@ final class OffloadAdapter
             return null;
         }
 
-        // CDNs can negotiate a different format (WebP/AVIF) behind a .jpg/.png URL.
+        // Reject CDN responses that swap format behind a .jpg/.png URL.
         if (!$this->matchesAttachmentMime($downloaded['path'], $attachmentId)) {
             wp_delete_file($downloaded['path']);
 
@@ -623,14 +661,9 @@ final class OffloadAdapter
         }
 
         if (is_bool($filtered)) {
-            // Ground truth: probe each WebP's remote URL regardless of what any
-            // handler claimed — works for every offload plugin. Same-site URLs
-            // have nothing remote to confirm.
             if ($needsRemoteWrite && $url !== '' && !$this->isSameSiteMediaUrl($url)) {
                 $verified = $this->verifyRemoteWebps($attachmentId, $context);
 
-                // The universal handler only proves a metadata save reached some
-                // listener, not that an upload happened.
                 if ($filtered && $acceptedByUniversal && !$explicitResult && $verified === false) {
                     return false;
                 }
@@ -666,9 +699,8 @@ final class OffloadAdapter
     }
 
     /**
-     * Universal push: fire wp_update_attachment_metadata so any offload
-     * plugin that hooks it re-uploads the attachment's files (WebP siblings
-     * ride along through the offloader's own file-list filter).
+     * Ask any offload plugin that hooks metadata updates to re-upload.
+     * WebP siblings are included via the offloader's own file-list filter.
      *
      * @param array<string, mixed> $context
      */
@@ -678,8 +710,7 @@ final class OffloadAdapter
             return null;
         }
 
-        // Already synced this request — the offloader uploaded on the
-        // pipeline's own metadata save; re-firing would double the upload.
+        // Already uploaded this request — do not fire again.
         if (!empty(self::$metaSynced[$attachmentId])) {
             return true;
         }
@@ -730,13 +761,10 @@ final class OffloadAdapter
     }
 
     /**
-     * Verify each WebP sibling's remote URL actually exists, and record the
-     * confirmed set — the only check that works for every offload plugin.
+     * Confirm each WebP exists on the remote host and store the confirmed set.
      *
      * @param array<string, mixed> $context
-     *
-     * @return bool|null null when there was nothing to verify, otherwise
-     *                   whether at least one WebP was confirmed remotely.
+     * @return bool|null null if there was nothing to check; otherwise true if any WebP was confirmed
      */
     private function verifyRemoteWebps(int $attachmentId, array $context, bool $reschedule = true): ?bool
     {
@@ -748,7 +776,7 @@ final class OffloadAdapter
             return null;
         }
 
-        // SSRF guard: the base URL must resolve to a public address.
+        // Block private or local addresses.
         if (!RemoteUrlGuard::isSafe($scheme . '://' . $host . dirname($path) . '/')) {
             return null;
         }
@@ -757,6 +785,18 @@ final class OffloadAdapter
         if (!is_array($map) || $map === []) {
             return null;
         }
+
+        update_post_meta($attachmentId, CompressionService::META_WEBP_REMOTE_CHECKED, time());
+
+        $previous = get_post_meta($attachmentId, CompressionService::META_WEBP_REMOTE, true);
+        $known = is_array($previous) && ($previous['host'] ?? '') === $host && is_array($previous['files'] ?? null)
+            ? $previous['files']
+            : [];
+
+        // Check unconfirmed files first so later runs move past the probe limit.
+        $map = array_filter($map, 'is_string');
+        $known = array_filter($known, 'is_string');
+        $map = array_merge(array_diff($map, $known), array_intersect($map, $known));
 
         $dir = trailingslashit(dirname($path));
         $confirmed = [];
@@ -768,9 +808,13 @@ final class OffloadAdapter
             if (!is_string($basename) || $basename === '' || wp_basename($basename) !== $basename) {
                 continue;
             }
-            // Unprobed files count as missing so the deferred re-verify picks them up.
             if ($probed >= Limits::REMOTE_VERIFY_MAX_FILES || microtime(true) > $deadline) {
-                ++$missing;
+                // Keep known confirmations; treat the rest as missing for a later check.
+                if (in_array($basename, $known, true)) {
+                    $confirmed[] = $basename;
+                } else {
+                    ++$missing;
+                }
                 continue;
             }
             ++$probed;
@@ -797,24 +841,26 @@ final class OffloadAdapter
             $this->clearRemotePushFailed($attachmentId);
         }
 
-        // Queue-based offloaders may not have landed the files yet — one
-        // deferred re-verify promotes them when their sync completes.
+        // Files may still be syncing — schedule one follow-up check.
         if ($missing > 0 && $reschedule && function_exists('wp_schedule_single_event')) {
             wp_schedule_single_event(time() + 10 * MINUTE_IN_SECONDS, 'slimify_reverify_remote', [$attachmentId]);
+        } elseif ($missing === 0 && function_exists('wp_clear_scheduled_hook')) {
+            wp_clear_scheduled_hook('slimify_reverify_remote', [$attachmentId]);
         }
 
         return $confirmed !== [];
     }
 
     /**
-     * Cron re-check of remote WebP availability (scheduled by verifyRemoteWebps
-     * when an offloader's async sync may still be running). Does not re-arm —
-     * one deferred attempt per push, then the next natural push re-verifies.
+     * Cron follow-up for remote WebPs.
+     * One deferred attempt; the next push will verify again if needed.
      */
     public function reverifyRemoteWebps(int $attachmentId): void
     {
         $url = $this->sourceUrl($attachmentId, 'full') ?? '';
         if ($url === '' || $this->isSameSiteMediaUrl($url)) {
+            // Record the check so delivery does not keep re-scheduling.
+            update_post_meta($attachmentId, CompressionService::META_WEBP_REMOTE_CHECKED, time());
             return;
         }
 
@@ -1016,6 +1062,12 @@ final class OffloadAdapter
         }
 
         if (!str_starts_with($url, 'http://') && !str_starts_with($url, 'https://')) {
+            return null;
+        }
+
+        // Host-less URLs (e.g. WP-CLI without --url) cannot be fetched or compared.
+        $host = wp_parse_url($url, PHP_URL_HOST);
+        if (!is_string($host) || $host === '') {
             return null;
         }
 

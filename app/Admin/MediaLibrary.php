@@ -217,7 +217,7 @@ final class MediaLibrary
             ], 422);
         }
 
-        // Partial budget runs keep work open; soft finishes (ineligible) must not look "still processing".
+        // Soft finishes (over limits) must not look like they are still processing.
         if ($this->isIncompleteRun($attachmentId)) {
             $this->compressionService->markProcessing($attachmentId);
             wp_send_json_success([
